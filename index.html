@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>биофилия</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="intro.css">
+</head>
+<body>
+
+  <!-- вступление: рождение звезды -->
+  <section class="intro" id="intro" aria-label="вступление: рождение звезды">
+    <div class="intro__ground"></div>
+    <div class="intro__spot intro__spot--orange"></div>
+    <div class="intro__spot intro__spot--pink"></div>
+    <div class="intro__spot intro__spot--teal"></div>
+
+    <canvas class="intro__canvas"></canvas>
+
+    <p class="intro__hint">
+      <span>коснитесь света</span>
+      <small>лучше в наушниках</small>
+    </p>
+    <p class="intro__after">наведите на точку — каждая звучит</p>
+
+    <div class="intro__ui">
+      <button type="button" class="intro__btn" data-sound aria-pressed="true">звук: вкл</button>
+      <button type="button" class="intro__btn" data-skip>пропустить</button>
+    </div>
+
+    <svg class="intro__grain" aria-hidden="true">
+      <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>
+      <rect width="100%" height="100%" filter="url(#grain)"/>
+    </svg>
+  </section>
+
+  <script src="intro.js"></script>
+</body>
+</html>
