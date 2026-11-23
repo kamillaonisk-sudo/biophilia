@@ -24,6 +24,23 @@
   const STEPS = 16;
   const MAX_W = 5;
 
+  // внутри карты (map.html) звезда открывается во фрейме: ?embed=1&star=rhythm
+  const params = new URLSearchParams(location.search);
+  const EMBED = params.get('embed') === '1';
+  // mode=feel — это не урок, а сама планета эмоций: здесь человек вводит, как он сейчас
+  const FEEL = EMBED && params.get('mode') === 'feel';
+  // w=… — смесь, которую человек уже налил в свою планету (6 чисел, по состояниям)
+  const PRESET = (params.get('w') || '').split(',').filter(Boolean).map(Number);
+  const LISTEN_S = 12;           // столько секунд нужно послушать станцию, чтобы урок считался пройденным
+  if (EMBED) {
+    document.body.classList.add('is-embed');
+    if (FEEL) document.body.classList.add('is-feel');
+    // Esc внутри фрейма — назад в небо
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && window.parent !== window) window.parent.postMessage({ type: 'biophilia:back' }, location.origin);
+    });
+  }
+
   const STATES = [
     { id: 'calm',       color: '#7ad7ff', motion: 'calm',   harms: [4, 6, 8, 9, 12],            tempo: 0.55, density: 0.55, jitter: 0.05, wet: 0.6,  oct: 1,   bright: 0.35, dir: 'random' },
     { id: 'wonder',     color: '#ffe14d', motion: 'burst',  harms: [8, 10, 12, 15, 18, 20, 24], tempo: 1.2,  density: 0.7,  jitter: 0.2,  wet: 0.45, oct: 1,   bright: 0.9,  dir: 'up' },
@@ -31,6 +48,10 @@
     { id: 'tenderness', color: '#ff7ac6', motion: 'breath', harms: [5, 6, 8, 10],               tempo: 0.6,  density: 0.6,  jitter: 0.08, wet: 0.4,  oct: 1,   bright: 0.25, dir: 'step' },
     { id: 'melancholy', color: '#b18cff', motion: 'sink',   harms: [4, 5, 6, 7],                tempo: 0.45, density: 0.5,  jitter: 0.12, wet: 0.65, oct: 0.5, bright: 0.2,  dir: 'down' },
     { id: 'joy',        color: '#ffb238', motion: 'bounce', harms: [6, 8, 9, 10, 12, 16],       tempo: 1.4,  density: 0.8,  jitter: 0.06, wet: 0.3,  oct: 1,   bright: 0.7,  dir: 'up' },
+    { id: 'anger',      color: '#ff8a3d', motion: 'flare',  harms: [6, 9, 12, 14, 18],          tempo: 1.6,  density: 0.9,  jitter: 0.3,  wet: 0.1,  oct: 0.5, bright: 0.85, dir: 'up' },
+    { id: 'fear',       color: '#7aa8ff', motion: 'shiver', harms: [7, 11, 13, 17, 19],         tempo: 1.3,  density: 0.45, jitter: 0.35, wet: 0.55, oct: 1,   bright: 0.45, dir: 'random' },
+    { id: 'hope',       color: '#9cff6e', motion: 'rise',   harms: [6, 8, 10, 12, 15],          tempo: 0.9,  density: 0.65, jitter: 0.08, wet: 0.5,  oct: 1,   bright: 0.65, dir: 'up' },
+    { id: 'gratitude',  color: '#5ee0c8', motion: 'breath', harms: [4, 6, 8, 10, 12],           tempo: 0.7,  density: 0.55, jitter: 0.05, wet: 0.5,  oct: 1,   bright: 0.5,  dir: 'step' },
   ];
   STATES.forEach((s) => (s.hi = 0));
   const NEUTRAL = { harms: [4, 6, 8, 12], tempo: 0.8, density: 0.4, jitter: 0.1, wet: 0.4, oct: 1, bright: 0.4, dir: 'random', hi: 0 };
@@ -42,15 +63,31 @@
     'tenderness+wonder': 'enchantment', 'melancholy+wonder': 'reverie', 'joy+wonder': 'delight',
     'anxiety+tenderness': 'care', 'anxiety+melancholy': 'dread', 'anxiety+joy': 'excitement',
     'melancholy+tenderness': 'longing', 'joy+tenderness': 'affection', 'joy+melancholy': 'nostalgia',
+    'anger+anxiety': 'agitation', 'anger+calm': 'resolve', 'anger+fear': 'defiance', 'anger+gratitude': 'ambivalence',
+    'anger+hope': 'determination', 'anger+joy': 'zeal', 'anger+melancholy': 'bitterness', 'anger+tenderness': 'protectiveness',
+    'anger+wonder': 'indignation', 'anxiety+fear': 'alarm', 'calm+fear': 'caution', 'fear+gratitude': 'relief',
+    'fear+hope': 'suspense', 'fear+joy': 'thrill', 'fear+melancholy': 'despair', 'fear+tenderness': 'vulnerability',
+    'fear+wonder': 'the sublime', 'anxiety+gratitude': 'humility', 'calm+gratitude': 'peace', 'gratitude+hope': 'faith',
+    'gratitude+joy': 'bliss', 'gratitude+melancholy': 'bittersweet', 'gratitude+tenderness': 'love', 'gratitude+wonder': 'reverence',
+    'anxiety+hope': 'anticipation', 'calm+hope': 'serenity', 'hope+joy': 'optimism', 'hope+melancholy': 'yearning',
+    'hope+tenderness': 'devotion', 'hope+wonder': 'inspiration',
   };
 
   const STARS = {
     rhythm:  { line: 'teaches you to hear repetition and the break', step: 0.24, voice: 'pluck', density: 1.0, accentEvery: 4 },
     timbre:  { line: 'teaches you to hear what a sound is made of',  step: 0.9,  voice: 'pad',   density: 0.8 },
     silence: { line: 'teaches you to hear the pause between sounds', step: 1.3,  voice: 'bell',  density: 0.45 },
+    feel:    { line: 'how are you right now? pour states into your planet', step: 0.9, voice: 'bell', density: 0.6 },
   };
 
-  const MOTION_SPEED = { calm: 0.15, burst: 0.3, jitter: 1.2, breath: 0.2, sink: 0.1, bounce: 0.6 };
+  // на станции орбиты: что именно слушать в своей смеси
+  const LISTEN_FOR = {
+    rhythm:  'the clock of your blend: every hit lights up · slide from steady to broken — that is what anxiety does to a pulse',
+    timbre:  'the same notes, different matter: switch wood, glass, metal, breath — and see which overtones light up',
+    silence: 'click the notes on the ring to carve them out — the pause and the echo become part of the music',
+  };
+
+  const MOTION_SPEED = { calm: 0.15, burst: 0.3, jitter: 1.2, breath: 0.2, sink: 0.1, bounce: 0.6, flare: 0.9, shiver: 0.5, rise: 0.12 };
 
   // ---------- DOM ----------
   const canvas = document.getElementById('c');
@@ -163,7 +200,7 @@
   function ensureAudio() {
     if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
     ac = new (window.AudioContext || window.webkitAudioContext)();
-    master = ac.createGain(); master.gain.value = soundOn ? 0.9 : 0;
+    master = ac.createGain(); master.gain.value = soundOn ? 0.7 : 0;
     const comp = ac.createDynamicsCompressor();
     comp.threshold.value = -18; comp.ratio.value = 3;
     master.connect(comp); comp.connect(ac.destination);
@@ -187,6 +224,8 @@
     drone.gain.setTargetAtTime(0.06, ac.currentTime, 1.5);
 
     nextT = ac.currentTime + 0.1;
+    pattern.loop = loopLen(); pattern.count = 0;
+    pattern.loopStart = pattern.nextT = ac.currentTime + 0.1;
     running = true;
     setInterval(schedule, 25);
   }
@@ -260,25 +299,94 @@
 
   const loopLen = () => 4.8 / Math.sqrt(mix.tempo);
 
+  // ---------- станции: у каждой свой инструмент ----------
+  // timbre — материал звука: доли обертонов (1-я — основной тон) и как долго звучит
+  const MATERIALS = {
+    wood:   { amps: [1, 0.5, 0.25, 0.12, 0.06, 0.03, 0.02, 0.01], dur: 0.6, noise: 0 },
+    glass:  { amps: [1, 0, 0.6, 0, 0.45, 0, 0.3, 0],              dur: 3.2, noise: 0 },
+    metal:  { amps: [1, 0.8, 0.75, 0.65, 0.6, 0.55, 0.5, 0.45],   dur: 2.4, noise: 0 },
+    breath: { amps: [0.5, 0.2, 0.1, 0.05, 0, 0, 0, 0],            dur: 1.4, noise: 1 },
+  };
+  let material = 'wood';
+  const overtone = new Array(8).fill(0);       // как горят кольца обертонов
+  let broken = 0;                              // rhythm: 0 — ровно, 1 — сломано
+  const carved = new Array(STEPS).fill(false); // silence: вырезанные шаги
+  let autoSteps = Array.from({ length: STEPS }, () => []);
+  const loopStation = () => EMBED && (star === 'rhythm' || star === 'silence');
+
+  // свой рисунок не нарисован — такт собирается из смеси сам
+  function rebuildAuto() {
+    autoSteps = Array.from({ length: STEPS }, () => []);
+    const pickK = () => {
+      if (!mix || mix.W === 0) return -1;
+      let r = Math.random() * mix.W, k = 0;
+      for (; k < STATES.length - 1; k++) { r -= mix.ws[k]; if (r <= 0) break; }
+      return k;
+    };
+    if (star === 'silence') {
+      for (let s = 0; s < STEPS; s += 2) autoSteps[s].push({ k: pickK(), r: Math.random(), accent: s % 8 === 0 });
+    } else {
+      const hits = Math.round(5 + (mix ? mix.density : 0.5) * 6);
+      for (let s = 0; s < STEPS; s += 4) autoSteps[s].push({ k: pickK(), r: Math.random(), accent: true });
+      for (let n = 0; n < hits - 4; n++) {
+        const s = (Math.random() * STEPS) | 0;
+        if (!autoSteps[s].length) autoSteps[s].push({ k: pickK(), r: Math.random(), accent: false });
+      }
+    }
+  }
+
+  function materialVoice(f, t, bright, accent) {
+    const m = MATERIALS[material];
+    const env = ac.createGain();
+    out(env, rand(-0.4, 0.4));
+    const peak = accent ? 0.16 : 0.11;
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(peak, t + (material === 'breath' ? 0.12 : 0.006));
+    env.gain.exponentialRampToValueAtTime(0.0001, t + m.dur);
+    const sumA = m.amps.reduce((a, b) => a + b, 0);
+    m.amps.forEach((a, n) => {
+      if (!a) return;
+      const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = f * (n + 1);
+      const g = ac.createGain(); g.gain.value = (a / sumA) * (n ? 0.6 + bright * 0.6 : 1);
+      o.connect(g); g.connect(env); o.start(t); o.stop(t + m.dur + 0.05);
+    });
+    if (m.noise) {
+      const len = (ac.sampleRate * m.dur) | 0, b = ac.createBuffer(1, len, ac.sampleRate), d = b.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      const src = ac.createBufferSource(); src.buffer = b;
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f * 2; bp.Q.value = 6;
+      const g = ac.createGain(); g.gain.value = 0.9;
+      src.connect(bp); bp.connect(g); g.connect(env); src.start(t);
+    }
+    events.push({ t, color: null, overtones: m.amps });
+  }
+
   function schedule() {
     if (!running) return;
     const st = STARS[star];
 
-    // нарисованный рисунок играет как круговой секвенсор
-    if (pattern.active) {
+    // нарисованный рисунок (или такт из смеси на rhythm и silence) играет как круговой секвенсор
+    if (pattern.active || loopStation()) {
       const L = loopLen();
       if (Math.abs(L - pattern.loop) > 1e-3) {
         pattern.loopStart = pattern.nextT - (pattern.count * L) / STEPS;
         pattern.loop = L;
       }
       while (pattern.nextT < ac.currentTime + 0.15) {
-        const hits = pattern.steps[pattern.count % STEPS];
-        for (const h of hits.slice(0, 2)) {
-          const S = STATES[h.k];
+        const si = pattern.count % STEPS;
+        const hits = (pattern.active ? pattern.steps : autoSteps)[si];
+        const silent = star === 'silence' && EMBED && carved[si];
+        // rhythm: «сломано» — удары съезжают и выпадают
+        const drift = star === 'rhythm' && EMBED ? rand(-1, 1) * broken * (pattern.loop / STEPS) * 0.45 : 0;
+        const drop = star === 'rhythm' && EMBED && Math.random() < broken * 0.3;
+        if (!silent && !drop) for (const h of hits.slice(0, 2)) {
+          const S = h.k >= 0 ? STATES[h.k] : NEUTRAL;
           const hs = [...S.harms].sort((a, b) => a - b);
           const harm = hs[Math.min(hs.length - 1, Math.floor(h.r * hs.length))];
-          voice(st.voice, BASE * harm * S.oct, pattern.nextT, clamp01(mix.bright * 0.5 + pattern.angular * 0.6), h.accent, pattern.angular);
-          events.push({ t: pattern.nextT, color: S.color, big: h.accent });
+          const tt = Math.max(ac.currentTime + 0.005, pattern.nextT + drift);
+          if (star === 'timbre' && EMBED) materialVoice(BASE * harm * S.oct, tt, mix.bright, h.accent);
+          else voice(st.voice, BASE * harm * S.oct, tt, clamp01(mix.bright * 0.5 + pattern.angular * 0.6), h.accent, pattern.angular);
+          events.push({ t: tt, color: S.color || CREAM, big: h.accent, step: si });
         }
         pattern.count++;
         pattern.nextT = pattern.loopStart + (pattern.count * pattern.loop) / STEPS;
@@ -293,7 +401,8 @@
       const accent = star === 'rhythm' && stepIdx % st.accentEvery === 0;
       if (accent || Math.random() < st.density * mix.density) {
         const n = pickNote();
-        voice(st.voice, accent ? n.f / 2 : n.f, t, mix.bright, accent);
+        if (star === 'timbre' && EMBED) materialVoice(n.f, t, mix.bright, accent);
+        else voice(st.voice, accent ? n.f / 2 : n.f, t, mix.bright, accent);
         events.push({ t, color: n.color, big: accent || st.voice !== 'pluck' });
       }
       nextT += step * (star === 'rhythm' && mix.jitter > 0.3 && Math.random() < 0.25 ? 0.5 : 1);
@@ -361,7 +470,11 @@
       pattern.count = 0;
       pattern.loopStart = pattern.nextT = ac.currentTime + 0.05;
     }
-    if (!pattern.active && wasActive && ac) nextT = ac.currentTime + 0.05;
+    if (!pattern.active && wasActive && ac) {
+      nextT = ac.currentTime + 0.05;
+      pattern.loop = loopLen(); pattern.count = 0;
+      pattern.loopStart = pattern.nextT = ac.currentTime + 0.05;
+    }
   }
 
   // ======================================================================
@@ -369,6 +482,7 @@
   // ======================================================================
   function applyMix() {
     mix = computeMix();
+    rebuildAuto();
     if (ac) {
       wet.gain.setTargetAtTime(mix.wet, ac.currentTime, 0.6);
       droneOsc.frequency.setTargetAtTime(BASE * mix.oct, ac.currentTime, 0.8);
@@ -385,11 +499,43 @@
     });
     updateHint();
     updateHud();
+    reportToMap();
+  }
+
+  // сообщаем карте: какая смесь, какой ритм нарисован и прослушан ли урок
+  let heard = 0, passed = false, askTap = false;
+  let ready = !EMBED;            // внутри карты — ждём от неё рисунок (biophilia:init)
+  function reportToMap() {
+    if (!EMBED || !ready || window.parent === window || (mix.W === 0 && strokes.length === 0 && !passed)) return;
+    window.parent.postMessage({
+      type: FEEL ? 'biophilia:feel' : 'biophilia:star',
+      star, passed,
+      blend: mix.name, extra: mix.extra,
+      weights: mix.ws.map((w) => +w.toFixed(2)),
+      colors: STATES.map((s) => s.color),
+      rhythm: pattern.active ? pattern.steps.map((a) => (a.length ? (a[0].accent ? 2 : 1) : 0)) : null,
+      loop: loopLen(),
+      drops: drops.slice(),
+      // рисунок путешествует вместе с человеком: планета → станции → карта
+      strokes: strokes.map((st) => ({ k: st.k, pts: st.pts.map((p) => [+p.x.toFixed(3), +p.y.toFixed(3)]) })),
+    }, location.origin);
   }
 
   function updateHint() {
-    if (mode === 'paint') {
-      hint.textContent = `brush: ${STATES[brush].id} — draw around the star, the shape becomes the rhythm`;
+    if (askTap) {                       // звук ещё не включён — без касания урок не начнётся
+      hint.textContent = 'tap anywhere to hear this station';
+      hint.classList.remove('is-hidden');
+    } else if (EMBED && passed) {
+      hint.textContent = 'you heard it · the planet moves on — back to the sky (esc)';
+      hint.classList.remove('is-hidden');
+    } else if (FEEL && mix.W > 0) {
+      hint.textContent = 'your planet has its blend · back to the sky (esc), then fly to the first station';
+      hint.classList.remove('is-hidden');
+    } else if (FEEL) {
+      hint.innerHTML = 'how are you right now<span>?</span> pour states into your planet';
+      hint.classList.remove('is-hidden');
+    } else if (mode === 'paint') {
+      hint.textContent = `brush: ${STATES[brush].id} — draw around the ${FEEL ? 'planet' : 'star'}, the shape becomes the rhythm`;
       hint.classList.toggle('is-hidden', strokes.length > 0);
     } else {
       hint.innerHTML = 'how are you right now<span>?</span> pour states into the star';
@@ -399,7 +545,7 @@
 
   function updateHud() {
     const st = STARS[star];
-    hud.star.textContent = star;
+    hud.star.textContent = FEEL ? 'your planet' : star;
     hud.blend.textContent = mix.name || 'none';
     hud.tempo.textContent = pattern.active ? `${(STEPS / loopLen()).toFixed(1)} steps / s` : `${(mix.tempo / st.step).toFixed(1)} / s`;
     hud.density.textContent = (st.density * mix.density).toFixed(2);
@@ -441,6 +587,7 @@
   // ======================================================================
   let W = 0, H = 0, DPR = 1, M = 1, cx = 0, cy = 0;
   let flash = 0;
+  const stepFlash = new Array(STEPS).fill(0);
   const ripples = [], sparks = [];
   let lastT = performance.now() / 1000;
 
@@ -463,6 +610,9 @@
       case 'breath': rho *= 0.8 + 0.35 * (0.5 + 0.5 * Math.sin(t * 0.9)); break;
       case 'sink': { const fr = (t * 0.08 + p.ph) % 1; dy = fr * sp * 1.1; fade = 1 - fr; break; }
       case 'bounce': rho *= 0.65 + 0.5 * Math.abs(Math.sin(t * 2.6 + p.ph)); break;
+      case 'flare':  rho *= 0.7 + 0.6 * Math.pow(Math.abs(Math.sin(t * 3.1 + p.ph)), 3); th += 0.1 * Math.sin(t * 9 + p.ph); break;
+      case 'shiver': rho *= 0.75 + 0.1 * Math.sin(t * 31 + p.ph * 5); th += 0.05 * Math.sin(t * 27 + p.ph); break;
+      case 'rise': { const fr = (t * 0.07 + p.ph) % 1; dy = -fr * sp * 1.1; fade = 1 - fr; break; }
     }
     return [ox + Math.cos(th) * rho, oy + Math.sin(th) * rho * 0.82 + dy, fade];
   }
@@ -475,15 +625,17 @@
     lastT = t;
     ctx.clearRect(0, 0, W, H);
 
-    const R = M * 0.31;
+    const R = M * 0.33;
     const cloudRot = Math.PI / 6 + 0.06 * Math.sin(t * 0.15);
     const k = 1 - Math.pow(0.02, dt);
 
     if (ac) {
       while (events.length && events[0].t <= ac.currentTime) {
         const e = events.shift();
+        if (e.overtones) { e.overtones.forEach((a, n) => (overtone[n] = Math.min(1.2, overtone[n] + a))); continue; }
         flash = Math.min(1.4, flash + (e.big ? 0.9 : 0.5));
         ripples.push({ born: t, color: e.color });
+        if (e.step !== undefined) stepFlash[e.step] = 1;
         sparks.push({ born: t, a: rand(0, Math.PI * 2), color: e.color, d: rand(0.1, 0.2) });
       }
     }
@@ -499,17 +651,41 @@
     ctx.restore();
 
     // сетка такта: 16 точек по кругу и стрелка, когда есть рисунок или режим кисти
-    const showGrid = mode === 'paint' || pattern.active;
+    const showGrid = mode === 'paint' || pattern.active || loopStation();
     let phase = -1;
-    if (pattern.active && ac) phase = (((ac.currentTime - pattern.loopStart) / pattern.loop) % 1 + 1) % 1;
+    if ((pattern.active || loopStation()) && ac) phase = (((ac.currentTime - pattern.loopStart) / pattern.loop) % 1 + 1) % 1;
+    for (let s2 = 0; s2 < STEPS; s2++) stepFlash[s2] *= Math.pow(0.08, dt);
     if (showGrid) {
-      const gr = M * 0.44;
+      const gr = M * 0.41;
       const cur = phase >= 0 ? Math.floor(phase * STEPS) : -1;
+      const steps = pattern.active ? pattern.steps : autoSteps;
+      if (loopStation()) {                                       // циферблат такта
+        ctx.strokeStyle = CREAM; ctx.lineWidth = 1; ctx.globalAlpha = 0.14;
+        ctx.beginPath(); ctx.arc(cx, cy, gr, 0, Math.PI * 2); ctx.stroke();
+      }
       for (let s = 0; s < STEPS; s++) {
         const a = -Math.PI / 2 + ((s + 0.5) / STEPS) * Math.PI * 2;
+        const x = cx + Math.cos(a) * gr, y = cy + Math.sin(a) * gr;
+        const has = loopStation() && steps[s] && steps[s].length;
+        if (has && star === 'silence' && carved[s]) {            // вырезанная нота — тёмная дырка
+          ctx.globalAlpha = 0.55; ctx.strokeStyle = CREAM; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.stroke();
+          continue;
+        }
+        if (has) {                                               // нота такта: горит на своём ударе
+          const col = steps[s][0].k >= 0 ? STATES[steps[s][0].k].color : CREAM;
+          const g = 14 + stepFlash[s] * 26;
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = 0.35 + stepFlash[s] * 0.65;
+          ctx.drawImage(sprite(col), x - g / 2, y - g / 2, g, g);
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.globalAlpha = 0.9; ctx.fillStyle = col;
+          ctx.beginPath(); ctx.arc(x, y, steps[s][0].accent ? 4 : 3, 0, Math.PI * 2); ctx.fill();
+          continue;
+        }
         ctx.globalAlpha = s === cur ? 0.9 : 0.3;
         ctx.fillStyle = CREAM;
-        ctx.beginPath(); ctx.arc(cx + Math.cos(a) * gr, cy + Math.sin(a) * gr, s === cur ? 2.4 : 1.3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, s === cur ? 2.4 : 1.3, 0, Math.PI * 2); ctx.fill();
       }
       if (phase >= 0) {
         const a = -Math.PI / 2 + phase * Math.PI * 2;
@@ -525,11 +701,14 @@
     // облака
     const mixed = mix.W > 0;
     clusters.forEach((c) => {
-      c.alpha = lerp(c.alpha, mixed ? 0.55 : 1, k);
+      c.alpha = lerp(c.alpha, star === 'silence' && EMBED ? 0.3 : mixed ? 0.55 : 1, k);
       c.bright = lerp(c.bright, c.k === hovered ? 1 : 0, k * 2);
       c.ang = -Math.PI / 2 + (c.k / STATES.length) * Math.PI * 2 + cloudRot;
-      c.x = cx + Math.cos(c.ang) * R;
-      c.y = cy + Math.sin(c.ang) * R * 0.82;
+      // сила чувства: каждая капля приближает облако к звезде — ближе значит сильнее
+      c.near = lerp(c.near || 0, Math.min(MAX_W, drops[c.k]) / MAX_W, k);
+      const rr = R * (1 - 0.42 * c.near);
+      c.x = cx + Math.cos(c.ang) * rr;
+      c.y = cy + Math.sin(c.ang) * rr * 0.82;
     });
 
     // нити
@@ -630,6 +809,51 @@
     ctx.fillStyle = CREAM;
     ctx.beginPath(); ctx.arc(cx, cy, 4 + flash * 1.5, 0, Math.PI * 2); ctx.fill();
 
+    // станция орбиты: кольцо прослушивания — урок пройден, когда оно замкнулось
+    // браузер мог не дать звуку стартовать без касания внутри — просим коснуться
+    if (EMBED && ac) {
+      const mute = ac.state !== 'running';
+      if (mute && !askTap) { askTap = true; updateHint(); }
+      else if (!mute && askTap) { askTap = false; updateHint(); }
+    }
+    if (EMBED && !FEEL) {
+      if (!passed && ac && ac.state === 'running' && soundOn) {
+        heard += dt;
+        if (heard >= LISTEN_S) { passed = true; reportToMap(); updateHint(); }
+      }
+      const lr = M * 0.1, u = passed ? 1 : heard / LISTEN_S;
+      if (askTap) {
+        const k2 = (t * 0.6) % 1;
+        ctx.strokeStyle = CREAM; ctx.lineWidth = 1; ctx.globalAlpha = 0.6 * (1 - k2);
+        ctx.beginPath(); ctx.arc(cx, cy, lr * (1 + k2 * 0.6), 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 0.85; ctx.fillStyle = CREAM; ctx.textAlign = 'center';
+        ctx.font = '300 12px "IBM Plex Mono", monospace';
+        ctx.fillText('tap to listen', cx, cy + lr + 22);
+      }
+      ctx.lineWidth = 1; ctx.lineCap = 'round';
+      ctx.strokeStyle = CREAM; ctx.globalAlpha = 0.12;
+      ctx.beginPath(); ctx.arc(cx, cy, lr, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = passed ? mix.color : CREAM; ctx.globalAlpha = passed ? 0.8 : 0.6;
+      ctx.beginPath(); ctx.arc(cx, cy, lr, -Math.PI / 2, -Math.PI / 2 + u * Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // timbre: из чего сделан звук — кольца обертонов, каждое загорается своей долей
+    if (star === 'timbre' && EMBED) {
+      for (let n = 0; n < 8; n++) {
+        overtone[n] *= Math.pow(0.25, dt);
+        const r = M * (0.135 + n * 0.022);
+        ctx.strokeStyle = n ? mix.color : CREAM;
+        ctx.lineWidth = 1 + overtone[n] * 2;
+        ctx.globalAlpha = 0.08 + overtone[n] * 0.6;
+        ctx.beginPath(); ctx.ellipse(cx, cy, r, r * 0.92, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.globalAlpha = 0.45; ctx.fillStyle = CREAM; ctx.textAlign = 'center';
+      ctx.font = '300 10px "IBM Plex Mono", monospace';
+      ctx.fillText(`${material} · overtones 1–8`, cx, cy + M * 0.135 + 8 * M * 0.022 + 14);
+      ctx.globalAlpha = 1;
+    }
+
     // кольцо смеси: доли состояний дугами
     if (mixed) {
       const rr = M * 0.115;
@@ -647,7 +871,7 @@
 
     // круги от нот
     for (let i = ripples.length - 1; i >= 0; i--) {
-      const r = ripples[i], age = (t - r.born) / 1.4;
+      const r = ripples[i], age = (t - r.born) / (star === 'silence' && EMBED ? 3.6 : 1.4);
       if (age >= 1) { ripples.splice(i, 1); continue; }
       ctx.strokeStyle = r.color;
       ctx.globalAlpha = 0.3 * (1 - age);
@@ -712,6 +936,16 @@
   canvas.addEventListener('pointerup', endStroke);
   canvas.addEventListener('pointercancel', endStroke);
   canvas.addEventListener('click', (e) => {
+    if (star === 'silence' && EMBED) {
+      const gr = M * 0.41;
+      for (let s2 = 0; s2 < STEPS; s2++) {
+        const a = -Math.PI / 2 + ((s2 + 0.5) / STEPS) * Math.PI * 2;
+        if (Math.hypot(cx + Math.cos(a) * gr - e.clientX, cy + Math.sin(a) * gr - e.clientY) < 16) {
+          carved[s2] = !carved[s2];
+          return;
+        }
+      }
+    }
     if (mode !== 'mix') return;
     const kk = clusterAt(e.clientX, e.clientY);
     if (kk >= 0) addDrop(kk);
@@ -724,13 +958,71 @@
     soundOn = !soundOn;
     soundBtn.textContent = soundOn ? 'sound: on' : 'sound: off';
     soundBtn.setAttribute('aria-pressed', String(soundOn));
-    if (ac) master.gain.setTargetAtTime(soundOn ? 0.9 : 0, ac.currentTime, 0.2);
+    if (ac) master.gain.setTargetAtTime(soundOn ? 0.7 : 0, ac.currentTime, 0.2);
   });
 
   window.addEventListener('resize', resize);
   resize();
   mix = computeMix();
-  starLine.textContent = STARS[star].line;
+  if (FEEL) {
+    star = 'feel';
+    starTag.querySelector('small').textContent = 'your planet';
+    starName.textContent = 'emotions';
+  } else if (EMBED && STARS[params.get('star')]) {
+    star = params.get('star');
+    starName.textContent = star;
+    starBtns.forEach((b) => b.classList.toggle('is-on', b.dataset.star === star));
+  }
+  if (EMBED && PRESET.length && PRESET.length <= STATES.length) PRESET.forEach((w, k) => (drops[k] = Math.max(0, Math.min(MAX_W, w || 0))));
+  starLine.textContent = (EMBED && LISTEN_FOR[star]) || STARS[star].line;
+  if (EMBED) $('.title').innerHTML = FEEL ? 'planet of<br>emotions' : `${star}<br>station`;
+  if (EMBED) {
+    const controls = $('.controls');
+    const gap = () => { const g = document.createElement('span'); g.className = 'gap'; return g; };
+    if (star === 'rhythm') {
+      const wrap = document.createElement('label');
+      wrap.className = 'slider';
+      wrap.innerHTML = 'steady <input type="range" min="0" max="100" value="0" aria-label="steady to broken"> broken';
+      wrap.querySelector('input').addEventListener('input', (e) => { broken = e.target.value / 100; ensureAudio(); });
+      controls.prepend(wrap, gap());
+    }
+    if (star === 'timbre') {
+      const btns = Object.keys(MATERIALS).map((m) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'btn' + (m === material ? ' is-on' : ''); b.textContent = m;
+        b.addEventListener('click', () => { material = m; ensureAudio(); btns.forEach((x) => x.classList.toggle('is-on', x === b)); });
+        return b;
+      });
+      controls.prepend(...btns, gap());
+    }
+    // готово: урок засчитан, назад в небо
+    const done = document.createElement('button');
+    done.type = 'button'; done.className = 'btn btn--done'; done.textContent = 'done ✓';
+    done.addEventListener('click', () => {
+      if (!FEEL) passed = true;
+      ready = true;
+      reportToMap();
+      if (window.parent !== window) window.parent.postMessage({ type: 'biophilia:back' }, location.origin);
+    });
+    controls.append(gap(), done);
+  }
   applyMix();
+  if (EMBED) {
+    // внутри карты звезда звучит сразу: в неё влетели кликом
+    ensureAudio();
+    window.addEventListener('pointerdown', ensureAudio);
+    // карта присылает рисунок человека — он звучит и здесь, через линзу этой станции
+    const takeInit = (list) => {
+      if (ready) return;
+      ready = true;
+      (list || []).forEach((st) => strokes.push({ k: st.k, pts: st.pts.map(([x, y]) => ({ x, y })) }));
+      if (strokes.length) rebuildPattern();
+      applyMix();
+    };
+    window.addEventListener('message', (e) => {
+      if (e.origin === location.origin && e.data && e.data.type === 'biophilia:init') takeInit(e.data.strokes);
+    });
+    setTimeout(() => takeInit([]), 1500);      // карта молчит — живём без рисунка
+  }
   requestAnimationFrame(draw);
 })();

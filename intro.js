@@ -22,6 +22,12 @@
   const FLASH = 2.6;                     // длительность вспышки
   const THREADS_AT = 4.2;                // когда начинают проявляться созвездия
   const DONE_AT = 8;                     // через сколько секунд после взрыва — intro:done
+  const VOLUME = 0.4;                    // общая громкость вступления (было 0.9 — слишком громко)
+  // подписи у крупных звёзд: где-то сейчас кто-то чувствует вот это
+  const CITIES = ['reykjavík', 'lisbon', 'tokyo', 'lagos', 'são paulo', 'mumbai', 'tbilisi', 'mexico city',
+                  'seoul', 'cairo', 'oslo', 'nairobi', 'buenos aires', 'jakarta', 'almaty', 'berlin', 'montréal', 'hanoi'];
+  const FEELINGS = ['calm', 'wonder', 'anxiety', 'tenderness', 'melancholy', 'joy', 'anger', 'fear', 'hope', 'gratitude', 'serenity', 'yearning',
+                    'contemplation', 'awe', 'longing', 'delight', 'nostalgia', 'warmth', 'reverie', 'solitude'];
 
   const root = document.getElementById('intro');
   const canvas = root.querySelector('.intro__canvas');
@@ -75,7 +81,7 @@
       if (!AC) return;
       const c = (this.c = new AC());
       this.master = c.createGain();
-      this.master.gain.value = this.on ? 0.9 : 0;
+      this.master.gain.value = this.on ? VOLUME : 0;
       const comp = c.createDynamicsCompressor();
       comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 3.5;
       this.master.connect(comp);
@@ -266,7 +272,7 @@
 
     setEnabled(on) {
       this.on = on;
-      if (this.master) this.master.gain.setTargetAtTime(on ? 0.9 : 0, this.c.currentTime, 0.2);
+      if (this.master) this.master.gain.setTargetAtTime(on ? VOLUME : 0, this.c.currentTime, 0.2);
     },
   };
 
@@ -367,7 +373,12 @@
         });
     });
 
-    labels = stars.slice().sort(() => Math.random() - 0.5).slice(0, 4);
+    const cities = CITIES.slice().sort(() => Math.random() - 0.5);
+    // подписи — только у звёзд подальше от даты в центре и от кнопки внизу
+    const free = (p) => Math.hypot((p.tx - cx) / 1.6, p.ty - cy) > Math.min(W, H) * 0.2 &&
+      !(p.ty > H - 150 && Math.abs(p.tx - cx) < 260) && p.tx < W - 220 && p.ty > 60;
+    labels = stars.filter(free).sort(() => Math.random() - 0.5).slice(0, 6);
+    labels.forEach((p, i) => (p.label = `${cities[i]} · ${pick(FEELINGS)}`));
   }
 
   // ---------- рисование ----------
@@ -566,12 +577,12 @@
       ctx.beginPath(); ctx.arc(hovered.x, hovered.y, hovered.r + 7 + (1 - hovered.excite) * 10, 0, Math.PI * 2); ctx.stroke();
     }
 
-    // координатные микроподписи
+    // кто где сейчас и что чувствует
     if (tb > THREADS_AT + 2.3) {
       ctx.globalAlpha = 0.5 * clamp01((tb - THREADS_AT - 2.3) / 1.5) * wa;
       ctx.fillStyle = CREAM;
       ctx.font = '300 11px "IBM Plex Mono", ui-monospace, monospace';
-      for (const p of labels) ctx.fillText(`x: ${Math.round(p.tx)}  y: ${Math.round(p.ty)}`, p.x + 12, p.y - 10);
+      for (const p of labels) ctx.fillText(p.label, p.x + 12, p.y - 10);
     }
     ctx.globalAlpha = 1;
 
@@ -681,6 +692,11 @@
     btnSound.setAttribute('aria-pressed', String(on));
   });
   btnSkip.addEventListener('click', (e) => { e.stopPropagation(); skip(); });
+
+  // сегодняшняя дата в центре — день мира, в который вы пришли
+  const d = new Date();
+  root.querySelector('[data-today]').textContent =
+    `${String(d.getDate()).padStart(2, '0')} · ${String(d.getMonth() + 1).padStart(2, '0')} · ${d.getFullYear()}`;
 
   window.addEventListener('resize', resize);
   resize();
