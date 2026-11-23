@@ -462,7 +462,8 @@
       const buf = await makeDemo(kind);
       if (!outsideOpen) return;
       r.src = ac.createBufferSource(); r.src.buffer = buf;
-      r.src.connect(out); r.src.connect(an);
+      const quiet = ac.createGain(); quiet.gain.value = 0.35;   // звук места в колонках — втрое тише, анализ — в полную силу
+      r.src.connect(quiet); quiet.connect(out); r.src.connect(an);
       r.src.start();
       worldBuf = buf;
       outStatus.textContent = `${kind} · listening · 10 seconds`;
@@ -523,8 +524,8 @@
     grainCool[i] = t;
     const src = ac.createBufferSource(); src.buffer = worldBuf;
     const g = ac.createGain();
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.9, t + 0.03);
-    g.gain.setValueAtTime(0.9, t + 0.28); g.gain.linearRampToValueAtTime(0, t + 0.4);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.4, t + 0.03);
+    g.gain.setValueAtTime(0.4, t + 0.28); g.gain.linearRampToValueAtTime(0, t + 0.4);
     src.connect(g); g.connect(out);
     src.start(t, Math.min((i / WAVE_N) * REC_DUR, worldBuf.duration - 0.45), 0.42);
   }

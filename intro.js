@@ -22,6 +22,7 @@
   const FLASH = 2.6;                     // длительность вспышки
   const THREADS_AT = 4.2;                // когда начинают проявляться созвездия
   const DONE_AT = 8;                     // через сколько секунд после взрыва — intro:done
+  const VOLUME = 0.4;                    // общая громкость вступления (было 0.9 — слишком громко)
   // подписи у крупных звёзд: где-то сейчас кто-то чувствует вот это
   const CITIES = ['reykjavík', 'lisbon', 'tokyo', 'lagos', 'são paulo', 'mumbai', 'tbilisi', 'mexico city',
                   'seoul', 'cairo', 'oslo', 'nairobi', 'buenos aires', 'jakarta', 'almaty', 'berlin', 'montréal', 'hanoi'];
@@ -80,7 +81,7 @@
       if (!AC) return;
       const c = (this.c = new AC());
       this.master = c.createGain();
-      this.master.gain.value = this.on ? 0.9 : 0;
+      this.master.gain.value = this.on ? VOLUME : 0;
       const comp = c.createDynamicsCompressor();
       comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 3.5;
       this.master.connect(comp);
@@ -271,7 +272,7 @@
 
     setEnabled(on) {
       this.on = on;
-      if (this.master) this.master.gain.setTargetAtTime(on ? 0.9 : 0, this.c.currentTime, 0.2);
+      if (this.master) this.master.gain.setTargetAtTime(on ? VOLUME : 0, this.c.currentTime, 0.2);
     },
   };
 
