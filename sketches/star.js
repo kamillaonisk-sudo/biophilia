@@ -415,8 +415,9 @@
 
   // сообщаем карте: какая смесь, какой ритм нарисован и прослушан ли урок
   let heard = 0, passed = false, askTap = false;
+  let ready = !EMBED;            // внутри карты — ждём от неё рисунок (biophilia:init)
   function reportToMap() {
-    if (!EMBED || window.parent === window || (mix.W === 0 && !passed)) return;
+    if (!EMBED || !ready || window.parent === window || (mix.W === 0 && strokes.length === 0 && !passed)) return;
     window.parent.postMessage({
       type: FEEL ? 'biophilia:feel' : 'biophilia:star',
       star, passed,
@@ -425,6 +426,9 @@
       colors: STATES.map((s) => s.color),
       rhythm: pattern.active ? pattern.steps.map((a) => (a.length ? (a[0].accent ? 2 : 1) : 0)) : null,
       loop: loopLen(),
+      drops: drops.slice(),
+      // рисунок путешествует вместе с человеком: планета → станции → карта
+      strokes: strokes.map((st) => ({ k: st.k, pts: st.pts.map((p) => [+p.x.toFixed(3), +p.y.toFixed(3)]) })),
     }, location.origin);
   }
 
@@ -439,7 +443,7 @@
       hint.innerHTML = 'how are you right now<span>?</span> pour states into your planet';
       hint.classList.remove('is-hidden');
     } else if (mode === 'paint') {
-      hint.textContent = `brush: ${STATES[brush].id} — draw around the star, the shape becomes the rhythm`;
+      hint.textContent = `brush: ${STATES[brush].id} — draw around the ${FEEL ? 'planet' : 'star'}, the shape becomes the rhythm`;
       hint.classList.toggle('is-hidden', strokes.length > 0);
     } else {
       hint.innerHTML = 'how are you right now<span>?</span> pour states into the star';
@@ -818,6 +822,18 @@
     // внутри карты звезда звучит сразу: в неё влетели кликом
     ensureAudio();
     window.addEventListener('pointerdown', ensureAudio);
+    // карта присылает рисунок человека — он звучит и здесь, через линзу этой станции
+    const takeInit = (list) => {
+      if (ready) return;
+      ready = true;
+      (list || []).forEach((st) => strokes.push({ k: st.k, pts: st.pts.map(([x, y]) => ({ x, y })) }));
+      if (strokes.length) rebuildPattern();
+      applyMix();
+    };
+    window.addEventListener('message', (e) => {
+      if (e.origin === location.origin && e.data && e.data.type === 'biophilia:init') takeInit(e.data.strokes);
+    });
+    setTimeout(() => takeInit([]), 1500);      // карта молчит — живём без рисунка
   }
   requestAnimationFrame(draw);
 })();

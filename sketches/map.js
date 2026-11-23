@@ -93,9 +93,10 @@
   }
 
   // ---------- состояние посетителя ----------
-  // blend — смесь из планеты эмоций (6 чисел), stars — пройденные станции,
-  // rhythm — нарисованный на станции rhythm, sent — где на общей планете лежит его точка
-  const empty = () => ({ blend: null, stars: {}, rhythm: null, sent: null });
+  // blend — смесь из планеты эмоций (6 чисел, капли + краска), drops — только капли,
+  // strokes — рисунок человека (он и есть его ритм), stars — пройденные станции,
+  // sent — где на общей планете лежит его точка
+  const empty = () => ({ blend: null, drops: null, strokes: [], stars: {}, rhythm: null, sent: null });
   let state = (() => { try { return { ...empty(), ...JSON.parse(localStorage.getItem(STORE)) }; } catch (e) { return empty(); } })();
   function save() { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* живём без сохранения */ } }
 
@@ -182,13 +183,36 @@
     });
   }
 
+  // песни альбома — звёзды-коллажи по краям неба; бумажные вырезки медленно вертятся в пространстве
   const songs = SONGS.map((name, i) => {
     const rnd = mulberry32(i * 977 + 13);
-    const n = 4 + Math.floor(rnd() * 3);
-    const pts = [];
-    for (let j = 0; j < n; j++) pts.push({ x: (rnd() - 0.5) * 0.1, y: (rnd() - 0.5) * 0.07 });
-    return { name, a: -Math.PI / 2 + ((i + 0.5) / SONGS.length) * Math.PI * 2, pts, accent: STATES[i % STATES.length].color };
+    const img = new Image();
+    img.src = `songs/${name.replace(' ', '-')}.png`;
+    return {
+      name, img, back: null,
+      a: -Math.PI / 2 + ((i + 0.5) / SONGS.length) * Math.PI * 2,
+      accent: STATES[i % STATES.length].color,
+      spin: rnd() * Math.PI * 2, speed: (0.25 + rnd() * 0.2) * (rnd() < 0.5 ? -1 : 1),
+      tilt: (rnd() - 0.5) * 0.5, bob: rnd() * 6, face: 0,
+      beads: Array.from({ length: 4 }, () => STATES[Math.floor(rnd() * STATES.length)].color),
+    };
   });
+  // изнанка вырезки — та же картинка, только тёмная, как обратная сторона бумаги
+  function backOf(sg) {
+    if (sg.back || !sg.img.complete || !sg.img.naturalWidth) return sg.back;
+    const c = document.createElement('canvas');
+    c.width = sg.img.naturalWidth; c.height = sg.img.naturalHeight;
+    const g = c.getContext('2d');
+    g.drawImage(sg.img, 0, 0);
+    g.globalCompositeOperation = 'source-atop';
+    g.fillStyle = 'rgba(14, 15, 20, .82)';
+    g.fillRect(0, 0, c.width, c.height);
+    return (sg.back = c);
+  }
+  const songPos = (sg) => {
+    const rx = (W / M) * 0.5 - 0.11, ry = (H / M) * 0.5 - 0.13;
+    return { x: Math.cos(sg.a) * rx, y: Math.sin(sg.a) * ry };
+  };
   const dust = Array.from({ length: 170 }, () => ({ x: rand(-1.6, 1.6), y: rand(-1, 1), s: rand(0.4, 1.3), tw: rand(0.5, 2), ph: rand(0, 6) }));
 
   // ---------- камера ----------
@@ -318,7 +342,8 @@
   }
 
   function openRoom(kind, id) {
-    const w = state.blend ? `&w=${state.blend.map((v) => +v.toFixed(2)).join(',')}` : '';
+    const drops = state.drops || state.blend;
+    const w = drops ? `&w=${drops.map((v) => +v.toFixed(2)).join(',')}` : '';
     frame.src = kind === 'star' ? `star.html?embed=1&star=${LESSONS[id].id}${w}` : `star.html?embed=1&mode=feel${w}`;
     room.classList.add('is-open');
     document.body.classList.add('is-inside');
@@ -361,17 +386,31 @@
     updateUi();
   }
 
+  // комната загрузилась — отдаём ей рисунок человека
+  frame.addEventListener('load', () => {
+    if (!inside || !frame.contentWindow) return;
+    frame.contentWindow.postMessage({ type: 'biophilia:init', strokes: state.strokes || [] }, location.origin);
+  });
+
+  // смесь, капли, рисунок и ритм приходят из планеты эмоций и со станций одинаково
+  function takeReport(d) {
+    state.blend = d.weights && sum(d.weights) > 0.05 ? d.weights : null;
+    if (d.drops) state.drops = d.drops;
+    if (d.strokes) {
+      state.strokes = d.strokes;
+      state.rhythm = d.rhythm && d.rhythm.some((v) => v) ? { steps: d.rhythm, loop: d.loop } : null;
+    }
+  }
   window.addEventListener('message', (e) => {
     if (e.origin !== location.origin || !e.data) return;
     const d = e.data;
     if (d.type === 'biophilia:feel') {
-      if (d.weights && sum(d.weights) > 0.05) state.blend = d.weights;
+      takeReport(d);
       save(); rebuildPeople(); updateUi();
     } else if (d.type === 'biophilia:star') {
       const l = LESSONS.find((x) => x.id === d.star);
       if (!l) return;
-      if (d.weights && sum(d.weights) > 0.05) state.blend = d.weights;
-      if (d.rhythm && d.rhythm.some((v) => v)) state.rhythm = { steps: d.rhythm, loop: d.loop };
+      takeReport(d);
       if (d.passed) state.stars[l.id] = true;
       save(); rebuildPeople(); updateUi();
     } else if (d.type === 'biophilia:back') {
@@ -446,19 +485,52 @@
     }
     ctx.globalAlpha = 1;
 
-    // далёкие созвездия песен альбома — у краёв неба
-    const rx = (W / M) * 0.5 - 0.12, ry = (H / M) * 0.5 - 0.15;
-    songs.forEach((sg) => {
-      const c = { x: Math.cos(sg.a) * rx, y: Math.sin(sg.a) * ry };
-      const pts = sg.pts.map((p) => S({ x: c.x + p.x, y: c.y + p.y }));
-      ctx.strokeStyle = CREAM; ctx.lineWidth = 0.8; ctx.globalAlpha = 0.2;
-      ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
-      pts.forEach(([x, y], i) => {
-        ctx.globalAlpha = 0.55; ctx.fillStyle = i === 0 ? sg.accent : CREAM;
-        ctx.beginPath(); ctx.arc(x, y, i === 0 ? 1.8 : 1.2, 0, Math.PI * 2); ctx.fill();
+    // ---- звёзды песен альбома: нити с бусинами между соседями, сами звёзды вертятся ----
+    const sp = songs.map((sg) => S(songPos(sg)));
+    ctx.lineWidth = 0.8;
+    songs.forEach((sg, i) => {
+      const [ax, ay] = sp[i], [bx, by] = sp[(i + 1) % songs.length];
+      ctx.strokeStyle = CREAM; ctx.globalAlpha = 0.16;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      sg.beads.forEach((col, j) => {
+        const u = 0.38 + j * 0.08;
+        ctx.globalAlpha = 0.6; ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(lerp(ax, bx, u), lerp(ay, by, u), 2, 0, Math.PI * 2); ctx.fill();
       });
-      const [lx, ly] = S({ x: c.x, y: c.y + 0.065 });
-      label(sg.name, lx, ly, 11, 0.42);
+    });
+    ctx.globalAlpha = 1;
+    songs.forEach((sg, i) => {
+      const hv = hovered && hovered.kind === 'song' && hovered.id === i;
+      // при наведении звезда разворачивается лицом к вам
+      sg.face = lerp(sg.face, hv ? 1 : 0, 1 - Math.pow(0.02, dt));
+      sg.spin += dt * sg.speed * (1 - sg.face);
+      const turn = Math.atan2(Math.sin(sg.spin), Math.cos(sg.spin));
+      const ang = lerp(turn, 0, sg.face);
+      const im = Math.cos(ang) >= 0 ? sg.img : backOf(sg);
+      if (!im || !sg.img.complete || !sg.img.naturalWidth) return;
+      const [x, y0] = sp[i];
+      const y = y0 + Math.sin(t * 0.6 + sg.bob) * 4;
+      const size = 0.13 * M * Math.min(cam.z, 2.5) * (1 + sg.face * 0.3);
+      const k = size / Math.max(sg.img.naturalWidth, sg.img.naturalHeight);
+      const w = sg.img.naturalWidth * k, h = sg.img.naturalHeight * k;
+      const sx = Math.abs(Math.cos(ang));
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(sg.tilt * (1 - sg.face) + Math.sin(t * 0.3 + sg.bob) * 0.05);
+      // толщина бумаги: тёмная кромка, видна, когда звезда повёрнута боком
+      ctx.globalAlpha = 0.9;
+      ctx.scale(Math.max(0.04, sx), 1);
+      if (sx < 0.97) ctx.drawImage(backOf(sg) || sg.img, -w / 2 + (Math.sin(ang) > 0 ? 3 : -3) / Math.max(0.2, sx), -h / 2, w, h);
+      ctx.globalAlpha = 0.55 + 0.45 * sx + sg.face * 0.2;
+      ctx.drawImage(im, -w / 2, -h / 2, w, h);
+      ctx.restore();
+      // цветная бусина над звездой, как на слайде
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.8;
+      ctx.drawImage(sprite(sg.accent), x - 8, y - h / 2 - 14, 16, 16);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+      if (hv) label('soon: its own app', x, y + h / 2 + 16, 10, 0.6);
     });
 
     // ---- орбита: весь путь пунктиром, пройденные дуги горят ----
@@ -600,6 +672,21 @@
     ctx.globalAlpha = 1;
     label('planet of', px, py - 3, 10, 0.7);
     label('emotions', px, py + 11, 11, 0.9);
+    // рисунок человека — внутри его планеты
+    if (state.strokes && state.strokes.length) {
+      ctx.save();
+      ctx.beginPath(); ctx.arc(px, py, pr * 0.98, 0, Math.PI * 2); ctx.clip();
+      const kk = pr / 0.3;
+      ctx.lineWidth = Math.max(0.8, pr * 0.03); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      state.strokes.forEach((st) => {
+        ctx.strokeStyle = STATES[st.k].color; ctx.globalAlpha = 0.85;
+        ctx.beginPath();
+        st.pts.forEach(([x, y], i) => (i ? ctx.lineTo(px + x * kk, py + y * kk) : ctx.moveTo(px + x * kk, py + y * kk)));
+        ctx.stroke();
+      });
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
     if (blend.name) label(blend.name, px, py + pr * 1.45 + 18, 10, 0.75, blend.color);
     else if (hp) label('fly in · how are you?', px, py + pr * 1.45 + 18, 10, 0.7);
 
@@ -629,6 +716,10 @@
   // ---------- наведение и клики ----------
   function hitTest(x, y) {
     const zf = Math.min(cam.z, 3);
+    for (let i = 0; i < songs.length; i++) {
+      const [sx, sy] = S(songPos(songs[i]));
+      if (Math.hypot(sx - x, sy - y) < 0.06 * M * Math.min(cam.z, 2.5)) return { kind: 'song', id: i };
+    }
     for (let i = 0; i < LESSONS.length; i++) {
       const [sx, sy] = S(stationPos(i));
       if (Math.hypot(sx - x, sy - y) < 24 * zf) return { kind: 'star', id: i };
@@ -646,11 +737,12 @@
     const changed = JSON.stringify(h) !== JSON.stringify(hovered);
     hovered = h;
     canvas.style.cursor = h ? 'pointer' : '';
-    if (changed && h && !listening) ping(h.kind === 'star' ? LESSONS[h.id].harm : h.kind === 'personal' ? 6 : 4);
+    if (changed && h && !listening) ping(h.kind === 'star' ? LESSONS[h.id].harm : h.kind === 'personal' ? 6 : h.kind === 'song' ? 3 + h.id : 4);
   });
   canvas.addEventListener('click', (e) => {
     if (inside) return;
-    const h = hitTest(e.clientX, e.clientY);
+    let h = hitTest(e.clientX, e.clientY);
+    if (h && h.kind === 'song') h = null;                       // приложения песен — позже
     if (h && h.kind === 'shared' && listening) back();          // второй клик — тишина
     else if (h && !(listening && h.kind !== 'shared')) flyInto(h.kind, h.id);
     else if (document.body.classList.contains('is-near')) back();
