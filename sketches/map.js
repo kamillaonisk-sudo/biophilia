@@ -62,6 +62,7 @@
   const room = $('[data-room]'), frame = $('[data-frame]');
   const hint = $('[data-hint]');
   const sendBtn = $('[data-send]');
+  const outStatus = $('[data-outside-status]');
 
   // ---------- утилиты ----------
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -96,7 +97,8 @@
   // blend — смесь из планеты эмоций (6 чисел, капли + краска), drops — только капли,
   // strokes — рисунок человека (он и есть его ритм), stars — пройденные станции,
   // sent — где на общей планете лежит его точка
-  const empty = () => ({ blend: null, drops: null, strokes: [], stars: {}, rhythm: null, sent: null });
+  // wave — звуковая волна места вокруг планеты (то, что снаружи)
+  const empty = () => ({ blend: null, drops: null, strokes: [], stars: {}, rhythm: null, wave: null, sent: null });
   let state = (() => { try { return { ...empty(), ...JSON.parse(localStorage.getItem(STORE)) }; } catch (e) { return empty(); } })();
   function save() { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* живём без сохранения */ } }
 
@@ -183,18 +185,32 @@
     });
   }
 
-  // песни альбома — звёзды-коллажи по краям неба; бумажные вырезки медленно вертятся в пространстве
+  // песни альбома — звёзды-коллажи, разбросанные по большому небу; бумажные вырезки вертятся и дрейфуют.
+  // небо больше экрана: его можно таскать и приближать, песни находятся, когда исследуешь
+  const SKY = { x: 1.6, y: 1.1 };
+  const songSpots = (() => {
+    const rnd = mulberry32(2011), spots = [];
+    for (let tries = 0; spots.length < SONGS.length && tries < 20000; tries++) {
+      const p = { x: (rnd() * 2 - 1) * SKY.x, y: (rnd() * 2 - 1) * SKY.y };
+      if ((p.x / 0.74) ** 2 + ((p.y - 0.02) / 0.44) ** 2 < 1) continue;          // не на орбите
+      // первые четыре выглядывают по краям первого экрана, остальные ждут, пока небо потаскают
+      const inView = Math.abs(p.x) < 0.74 && Math.abs(p.y) < 0.44;
+      if ((spots.length < 4) !== inView) continue;
+      if (spots.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 0.42)) continue;   // не слипаются
+      spots.push(p);
+    }
+    return spots;
+  })();
   const songs = SONGS.map((name, i) => {
     const rnd = mulberry32(i * 977 + 13);
     const img = new Image();
     img.src = `songs/${name.replace(' ', '-')}.png`;
     return {
       name, img, back: null,
-      a: -Math.PI / 2 + ((i + 0.5) / SONGS.length) * Math.PI * 2,
+      home: songSpots[i], drift: rnd() * 6, size: 0.11 + rnd() * 0.06,
       accent: STATES[i % STATES.length].color,
       spin: rnd() * Math.PI * 2, speed: (0.25 + rnd() * 0.2) * (rnd() < 0.5 ? -1 : 1),
       tilt: (rnd() - 0.5) * 0.5, bob: rnd() * 6, face: 0,
-      beads: Array.from({ length: 4 }, () => STATES[Math.floor(rnd() * STATES.length)].color),
     };
   });
   // изнанка вырезки — та же картинка, только тёмная, как обратная сторона бумаги
@@ -210,10 +226,10 @@
     return (sg.back = c);
   }
   const songPos = (sg) => {
-    const rx = (W / M) * 0.5 - 0.11, ry = (H / M) * 0.5 - 0.13;
-    return { x: Math.cos(sg.a) * rx, y: Math.sin(sg.a) * ry };
+    const t = now() * 0.05 + sg.drift;
+    return { x: sg.home.x + Math.sin(t) * 0.05, y: sg.home.y + Math.cos(t * 0.8) * 0.035 };
   };
-  const dust = Array.from({ length: 170 }, () => ({ x: rand(-1.6, 1.6), y: rand(-1, 1), s: rand(0.4, 1.3), tw: rand(0.5, 2), ph: rand(0, 6) }));
+  const dust = Array.from({ length: 360 }, () => ({ x: rand(-2.6, 2.6), y: rand(-1.8, 1.8), s: rand(0.4, 1.3), tw: rand(0.5, 2), ph: rand(0, 6) }));
 
   // ---------- камера ----------
   const cam = { x: 0, y: 0, z: 1 };
@@ -327,7 +343,7 @@
   // ======================================================================
   // ПОЛЁТЫ
   // ======================================================================
-  let inside = null, flightToken = 0, hovered = null, flight = null;
+  let inside = null, flightToken = 0, hovered = null, flight = null, waveHot = -1;
 
   function flyInto(kind, id) {
     ensureAudio();
@@ -354,6 +370,7 @@
   function back() {
     flightToken++;
     stopSymphony();
+    cancelOutside();
     if (inside) {
       room.classList.remove('is-open');
       document.body.classList.remove('is-inside');
@@ -366,9 +383,205 @@
     updateUi();
   }
 
+  // ======================================================================
+  // СНАРУЖИ: 10 секунд звука вокруг — звуковая волна вокруг планеты
+  // ======================================================================
+  const REC_DUR = 10, WAVE_N = 96;
+  const PITCH = ['#b18cff', '#7aa8ff', '#7ad7ff', '#5ee0c8', '#9cff6e', '#ffe14d', '#ffb238', '#ff8a3d', '#ff5a5f', '#ff7ac6']; // низкое → высокое
+  const CAL = { cLo: 200, cHi: 5000, dbLo: -55, dbHi: -13 };
+  let outsideOpen = false, rec = null, worldBuf = null;    // запись места живёт только в этом визите и никуда не уходит
+
+  function flyOutside() {
+    ensureAudio();
+    flightToken++;
+    follow = personalPos;
+    camT.z = 2.6;
+    outsideOpen = true;
+    outStatus.textContent = 'hear what is around you · 10 seconds';
+    document.body.classList.add('is-near');
+    updateUi();
+  }
+
+  function measure(an, fbuf, tbuf) {
+    an.getFloatTimeDomainData(tbuf);
+    an.getFloatFrequencyData(fbuf);
+    let sq = 0;
+    for (let i = 0; i < tbuf.length; i++) sq += tbuf[i] * tbuf[i];
+    const db = 20 * Math.log10(Math.sqrt(sq / tbuf.length) + 1e-9);
+    const binHz = ac.sampleRate / an.fftSize;
+    let sumP = 0, wsum = 0;
+    for (let i = 1; i < fbuf.length; i++) {
+      const hz = i * binHz;
+      if (hz < 60 || hz > 12000) continue;
+      const p = Math.pow(10, fbuf[i] / 10);
+      sumP += p; wsum += p * hz;
+    }
+    const centroid = sumP > 0 ? wsum / sumP : 1000;
+    return [clamp01((db - CAL.dbLo) / (CAL.dbHi - CAL.dbLo)), clamp01(Math.log(centroid / CAL.cLo) / Math.log(CAL.cHi / CAL.cLo))];
+  }
+
+  async function startOutside(kind) {
+    ensureAudio();
+    if (rec) return;
+    const an = ac.createAnalyser();
+    an.fftSize = 2048; an.smoothingTimeConstant = 0.4;
+    const mute = ac.createGain(); mute.gain.value = 0;
+    an.connect(mute); mute.connect(ac.destination);
+    const r = { an, fbuf: new Float32Array(an.frequencyBinCount), tbuf: new Float32Array(an.fftSize), samples: [], acc: [0, 0, 0] };
+    if (kind === 'mic') {
+      if (!navigator.mediaDevices || !window.MediaRecorder) { outStatus.textContent = 'this browser cannot record · choose a place'; return; }
+      outStatus.textContent = 'allow access to the microphone';
+      try {
+        r.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      } catch (e) { outStatus.textContent = 'no access to the microphone · choose a place'; return; }
+      if (!outsideOpen) { r.stream.getTracks().forEach((tr) => tr.stop()); return; }
+      r.src = ac.createMediaStreamSource(r.stream);
+      r.src.connect(an);                                      // в колонки не идёт — иначе эхо
+      r.mr = new MediaRecorder(r.stream);
+      r.chunks = [];
+      r.mr.ondataavailable = (e) => { if (e.data.size) r.chunks.push(e.data); };
+      r.mr.start();
+      outStatus.textContent = 'listening to where you are · 10 seconds';
+    } else {
+      outStatus.textContent = `gathering the sound of the ${kind}…`;
+      const buf = await makeDemo(kind);
+      if (!outsideOpen) return;
+      r.src = ac.createBufferSource(); r.src.buffer = buf;
+      r.src.connect(out); r.src.connect(an);
+      r.src.start();
+      worldBuf = buf;
+      outStatus.textContent = `${kind} · listening · 10 seconds`;
+    }
+    r.start = ac.currentTime;
+    rec = r;
+    document.body.classList.add('is-recording');
+  }
+
+  // каждый кадр записи: громкость → длина луча волны, высота → цвет
+  function tickOutside() {
+    if (!rec || !ac) return;
+    const [l, b] = measure(rec.an, rec.fbuf, rec.tbuf);
+    rec.acc[0] += l; rec.acc[1] += b; rec.acc[2]++;
+    const el = ac.currentTime - rec.start;
+    while (rec.samples.length < Math.min(WAVE_N, Math.floor((el / REC_DUR) * WAVE_N))) {
+      const n = rec.acc[2] || 1;
+      rec.samples.push([+(rec.acc[0] / n).toFixed(2), +(rec.acc[1] / n).toFixed(2)]);
+      rec.acc = [0, 0, 0];
+    }
+    if (el >= REC_DUR) finishOutside();
+  }
+
+  function finishOutside() {
+    const r = rec;
+    rec = null;
+    document.body.classList.remove('is-recording');
+    state.wave = r.samples;
+    save();
+    if (r.mr) {
+      r.mr.onstop = async () => {
+        try { worldBuf = await ac.decodeAudioData(await new Blob(r.chunks, { type: r.mr.mimeType || 'audio/webm' }).arrayBuffer()); } catch (e) { /* без прослушивания */ }
+      };
+      r.mr.stop();
+      r.stream.getTracks().forEach((tr) => tr.stop());
+      r.src.disconnect();
+    }
+    outStatus.textContent = 'your planet is complete';
+    ping(4);
+    updateUi();
+  }
+
+  function cancelOutside() {
+    outsideOpen = false;
+    if (!rec) return;
+    const r = rec;
+    rec = null;
+    document.body.classList.remove('is-recording');
+    try { if (r.mr) { r.mr.stop(); r.stream.getTracks().forEach((tr) => tr.stop()); } else r.src.stop(); } catch (e) { /* уже остановлено */ }
+  }
+
+  // кусочек записи под курсором — тот момент, из которого вырос этот луч волны
+  const grainCool = {};
+  function playGrain(i) {
+    if (!worldBuf || !ac) return;
+    const t = ac.currentTime;
+    if (grainCool[i] && t - grainCool[i] < 0.3) return;
+    grainCool[i] = t;
+    const src = ac.createBufferSource(); src.buffer = worldBuf;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.9, t + 0.03);
+    g.gain.setValueAtTime(0.9, t + 0.28); g.gain.linearRampToValueAtTime(0, t + 0.4);
+    src.connect(g); g.connect(out);
+    src.start(t, Math.min((i / WAVE_N) * REC_DUR, worldBuf.duration - 0.45), 0.42);
+  }
+
+  // звуки мест (синтез, чтобы работало без микрофона) — те же, что в эскизе кристалла
+  const demoCache = {};
+  async function makeDemo(name) {
+    if (demoCache[name]) return demoCache[name];
+    const sr = 44100, DUR = REC_DUR;
+    const oc = new OfflineAudioContext(1, sr * DUR, sr);
+    const o = oc.createGain(); o.connect(oc.destination);
+    const noiseBuf = (sec) => {
+      const b = oc.createBuffer(1, Math.max(1, (sr * sec) | 0), sr), d = b.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      return b;
+    };
+    const noise = (type, freq, q, gain, start = 0, dur = DUR) => {
+      const s = oc.createBufferSource(); s.buffer = noiseBuf(dur);
+      const f = oc.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+      const g = oc.createGain(); g.gain.value = gain;
+      s.connect(f); f.connect(g); g.connect(o); s.start(start);
+      return g;
+    };
+    const tone = (type, f0, f1, t, dur, gain, hold = false) => {
+      const os = oc.createOscillator(); os.type = type;
+      os.frequency.setValueAtTime(f0, t);
+      os.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      const g = oc.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(gain, t + 0.006);
+      if (hold) { g.gain.setValueAtTime(gain, t + dur - 0.05); g.gain.linearRampToValueAtTime(0, t + dur); }
+      else g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      os.connect(g); g.connect(o); os.start(t); os.stop(t + dur + 0.02);
+    };
+    const curve = (fn, n = 240) => Float32Array.from({ length: n }, (_, i) => fn((i / (n - 1)) * DUR));
+    if (name === 'forest') {
+      noise('bandpass', 500, 0.6, 1).gain.setValueCurveAtTime(curve((t) => 0.05 + 0.035 * Math.sin(t * 0.8)), 0, DUR);
+      for (let k = 0; k < 12; k++) {
+        const t0 = rand(0.2, 9.2), f = rand(2600, 4200), reps = 2 + ((Math.random() * 4) | 0);
+        for (let r = 0; r < reps; r++) tone('sine', f, f * rand(1.2, 1.6), t0 + r * 0.11, 0.07, 0.18);
+      }
+      for (let k = 0; k < 3; k++) { const t0 = rand(1, 8.4); tone('sine', 900, 700, t0, 0.35, 0.12); tone('sine', 900, 650, t0 + 0.45, 0.4, 0.1); }
+    } else if (name === 'city') {
+      noise('lowpass', 180, 0.7, 1).gain.setValueCurveAtTime(curve((t) => 0.45 + 0.25 * Math.sin(t * 0.6 + 1)), 0, DUR);
+      noise('bandpass', 1200, 0.8, 0.03);
+      [2.6, 7.1].forEach((t) => { tone('sawtooth', 392, 390, t, 0.6, 0.05, true); tone('sawtooth', 466, 464, t, 0.6, 0.04, true); });
+      for (let t = 0.8; t < 6; t += rand(0.45, 0.6)) {
+        const g = noise('highpass', 1800, 0.7, 0, t, 0.06);
+        g.gain.setValueAtTime(0.3, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+      }
+    } else if (name === 'sea') {
+      noise('lowpass', 700, 0.5, 1).gain.setValueCurveAtTime(curve((t) => 0.04 + 0.5 * Math.pow(Math.max(0, Math.sin(t * 1.75 - 0.5)), 2)), 0, DUR);
+      noise('highpass', 3000, 0.5, 1).gain.setValueCurveAtTime(curve((t) => 0.002 + 0.12 * Math.pow(Math.max(0, Math.sin(t * 1.75 - 0.9)), 6)), 0, DUR);
+      tone('sine', 1400, 1000, 6.2, 0.5, 0.06); tone('sine', 1500, 1050, 6.8, 0.45, 0.05);
+    } else {
+      noise('lowpass', 7000, 0.5, 0.1);
+      noise('highpass', 2500, 0.5, 0.05);
+      for (let k = 0; k < 450; k++) tone('sine', rand(1800, 4200), rand(1500, 3000), rand(0, 9.9), 0.025, rand(0.02, 0.07));
+      const th = noise('lowpass', 110, 0.8, 0, 5.5, 4.4);
+      th.gain.setValueAtTime(0, 5.5); th.gain.linearRampToValueAtTime(0.9, 5.7); th.gain.exponentialRampToValueAtTime(0.001, 9.8);
+    }
+    const buf = await oc.startRendering();
+    const d = buf.getChannelData(0);
+    let peak = 0;
+    for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]));
+    if (peak > 0) for (let i = 0; i < d.length; i++) d[i] *= 0.8 / peak;
+    return (demoCache[name] = buf);
+  }
+
   // точка-осколок летит с планеты эмоций на общую
   function sendPoint() {
-    if (!orbitClosed() || !state.blend || flight) return;
+    if (!orbitClosed() || !state.blend || !state.wave || flight) return;
     ensureAudio();
     back();
     setTimeout(() => {
@@ -485,20 +698,8 @@
     }
     ctx.globalAlpha = 1;
 
-    // ---- звёзды песен альбома: нити с бусинами между соседями, сами звёзды вертятся ----
+    // ---- звёзды песен альбома: разбросаны по небу, вертятся ----
     const sp = songs.map((sg) => S(songPos(sg)));
-    ctx.lineWidth = 0.8;
-    songs.forEach((sg, i) => {
-      const [ax, ay] = sp[i], [bx, by] = sp[(i + 1) % songs.length];
-      ctx.strokeStyle = CREAM; ctx.globalAlpha = 0.16;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-      sg.beads.forEach((col, j) => {
-        const u = 0.38 + j * 0.08;
-        ctx.globalAlpha = 0.6; ctx.fillStyle = col;
-        ctx.beginPath(); ctx.arc(lerp(ax, bx, u), lerp(ay, by, u), 2, 0, Math.PI * 2); ctx.fill();
-      });
-    });
-    ctx.globalAlpha = 1;
     songs.forEach((sg, i) => {
       const hv = hovered && hovered.kind === 'song' && hovered.id === i;
       // при наведении звезда разворачивается лицом к вам
@@ -510,7 +711,8 @@
       if (!im || !sg.img.complete || !sg.img.naturalWidth) return;
       const [x, y0] = sp[i];
       const y = y0 + Math.sin(t * 0.6 + sg.bob) * 4;
-      const size = 0.13 * M * Math.min(cam.z, 2.5) * (1 + sg.face * 0.3);
+      if (x < -200 || x > W + 200 || y0 < -200 || y0 > H + 200) return;      // за краем экрана
+      const size = sg.size * M * Math.min(cam.z, 2.5) * (1 + sg.face * 0.3);
       const k = size / Math.max(sg.img.naturalWidth, sg.img.naturalHeight);
       const w = sg.img.naturalWidth * k, h = sg.img.naturalHeight * k;
       const sx = Math.abs(Math.cos(ang));
@@ -646,6 +848,43 @@
     const pulse = rhythmPulse(blend.W ? mySteps() : null, t);
     const hp = hovered && hovered.kind === 'personal';
     const pr = 0.045 * M * cam.z * (1 + pulse * 0.08) * (hp ? 1.08 : 1);
+    // снаружи — звуковая волна места: громкость — длина луча, высота — цвет
+    tickOutside();
+    const wave = rec ? rec.samples : state.wave;
+    if (wave && wave.length) {
+      const r0 = pr * 1.75, rot = t * 0.02;
+      const tip = (i) => {
+        const [l] = wave[i];
+        const a = -Math.PI / 2 + (i / WAVE_N) * Math.PI * 2 + rot;
+        const len = pr * (0.08 + 0.95 * l) * (1 + 0.06 * Math.sin(t * 2 + i * 0.4) + (waveHot === i ? 0.35 : 0));
+        return [a, len];
+      };
+      ctx.lineWidth = Math.max(1, pr * 0.025); ctx.lineCap = 'round';
+      wave.forEach(([, b], i) => {
+        const [a, len] = tip(i);
+        ctx.strokeStyle = PITCH[Math.min(9, Math.floor(b * 10))];
+        ctx.globalAlpha = waveHot === i ? 1 : 0.75;
+        ctx.beginPath();
+        ctx.moveTo(px + Math.cos(a) * r0, py + Math.sin(a) * r0);
+        ctx.lineTo(px + Math.cos(a) * (r0 + len), py + Math.sin(a) * (r0 + len));
+        ctx.stroke();
+      });
+      ctx.strokeStyle = CREAM; ctx.globalAlpha = 0.25; ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      wave.forEach((_, i) => {
+        const [a, len] = tip(i);
+        const x = px + Math.cos(a) * (r0 + len), y = py + Math.sin(a) * (r0 + len);
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      });
+      if (wave.length === WAVE_N) ctx.closePath();
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    } else if (orbitClosed() && state.blend && !outsideOpen) {   // орбита замкнута — планета зовёт наружу
+      const u = (t * 0.45) % 1;
+      ctx.strokeStyle = CREAM; ctx.lineWidth = 1; ctx.globalAlpha = 0.55 * (1 - u);
+      ctx.beginPath(); ctx.arc(px, py, pr * (1.75 + u * 1.1), 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = 0.35 + pulse * 0.25;
     ctx.drawImage(sprite(blend.color), px - pr * 2.6, py - pr * 2.6, pr * 5.2, pr * 5.2);
@@ -689,6 +928,7 @@
     }
     if (blend.name) label(blend.name, px, py + pr * 1.45 + 18, 10, 0.75, blend.color);
     else if (hp) label('fly in · how are you?', px, py + pr * 1.45 + 18, 10, 0.7);
+    if (hp && orbitClosed() && state.blend && !state.wave) label('hear what is around you', px, py - pr * 1.9, 10, 0.8);
 
     // ---- точка в полёте ----
     if (flight) {
@@ -731,8 +971,47 @@
     return null;
   }
 
+  // небо можно таскать мышью и приближать колёсиком — песни находятся, когда исследуешь
+  let drag = null, dragged = false;
+  const CAM_LIM = { x: SKY.x - 0.4, y: SKY.y - 0.3 };
+  canvas.addEventListener('pointerdown', (e) => {
+    if (inside || follow) return;
+    drag = { x: e.clientX, y: e.clientY, cx: camT.x, cy: camT.y, moved: false };
+  });
+  window.addEventListener('pointerup', () => {
+    if (drag) { dragged = drag.moved; drag = null; document.body.classList.remove('is-dragging'); }
+  });
+  canvas.addEventListener('wheel', (e) => {
+    if (inside || follow) return;
+    e.preventDefault();
+    camT.z = Math.max(0.6, Math.min(1.8, camT.z * Math.exp(-e.deltaY * 0.0012)));
+    document.body.classList.add('was-dragged');
+  }, { passive: false });
+
   canvas.addEventListener('pointermove', (e) => {
     if (inside) return;
+    if (drag) {
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) > 5) { drag.moved = true; document.body.classList.add('is-dragging', 'was-dragged'); }
+      if (drag.moved) {
+        camT.x = Math.max(-CAM_LIM.x, Math.min(CAM_LIM.x, drag.cx - dx / (M * cam.z)));
+        camT.y = Math.max(-CAM_LIM.y, Math.min(CAM_LIM.y, drag.cy - dy / (M * cam.z)));
+        cam.x = camT.x; cam.y = camT.y;
+        return;
+      }
+    }
+    // волна вокруг планеты: под курсором — тот момент записи
+    waveHot = -1;
+    if (state.wave) {
+      const [px, py] = S(personalPos());
+      const pr = 0.045 * M * cam.z, d = Math.hypot(e.clientX - px, e.clientY - py);
+      if (d > pr * 1.6 && d < pr * 2.9) {
+        let a = Math.atan2(e.clientY - py, e.clientX - px) + Math.PI / 2 - now() * 0.02;
+        a = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+        waveHot = Math.min(WAVE_N - 1, Math.floor((a / (Math.PI * 2)) * WAVE_N));
+        playGrain(waveHot);
+      }
+    }
     const h = hitTest(e.clientX, e.clientY);
     const changed = JSON.stringify(h) !== JSON.stringify(hovered);
     hovered = h;
@@ -741,18 +1020,24 @@
   });
   canvas.addEventListener('click', (e) => {
     if (inside) return;
+    if (dragged) { dragged = false; return; }                   // это было перетаскивание, не клик
     let h = hitTest(e.clientX, e.clientY);
     if (h && h.kind === 'song') h = null;                       // приложения песен — позже
+    if (h && h.kind === 'personal' && orbitClosed() && state.blend && !state.wave) { if (!outsideOpen) flyOutside(); return; }
+    if (outsideOpen && !h) { if (!rec) back(); return; }
     if (h && h.kind === 'shared' && listening) back();          // второй клик — тишина
     else if (h && !(listening && h.kind !== 'shared')) flyInto(h.kind, h.id);
     else if (document.body.classList.contains('is-near')) back();
   });
   $('[data-back]').addEventListener('click', back);
   sendBtn.addEventListener('click', sendPoint);
+  $('[data-rec]').addEventListener('click', () => startOutside('mic'));
+  document.querySelectorAll('[data-place]').forEach((b) => b.addEventListener('click', () => startOutside(b.dataset.place)));
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') back(); });
   $('[data-reset]').addEventListener('click', () => {
     back();
     state = empty(); save();
+    worldBuf = null;
     planetA = targetA();
     rebuildPeople(); updateUi();
   });
@@ -764,15 +1049,17 @@
     hud.blend.textContent = b.name || '—';
     hud.rhythm.textContent = state.rhythm ? `${state.rhythm.steps.filter(Boolean).length} beats drawn` : '—';
     hud.seeds.textContent = `${PEOPLE}${state.sent ? ' + you' : ''}`;
-    const canSend = orbitClosed() && !!state.blend && !state.sent && !flight;
+    const canSend = orbitClosed() && !!state.blend && !!state.wave && !state.sent && !flight;
     document.body.classList.toggle('can-send', canSend && !inside);
+    document.body.classList.toggle('show-outside', outsideOpen && !state.wave);
     const n = nextLesson();
     hint.textContent = listening
       ? 'everyone sounds together · click the shared planet again for silence'
       : flight ? 'your point is flying to the shared planet'
       : !state.blend ? 'start with your planet of emotions: how are you right now?'
       : n >= 0 ? `fly to the ${LESSONS[n].id} station: hear ${LESSONS[n].what}`
-      : !state.sent ? 'the orbit is closed · send your point to the shared planet'
+      : !state.wave ? (outsideOpen ? 'outside your planet: what does your place sound like?' : 'the orbit is closed · now click your planet and hear what is around you')
+      : !state.sent ? 'your planet is complete: inside — your feelings, outside — your place'
       : 'click the shared planet to hear everyone together';
   }
 

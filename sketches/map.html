@@ -54,6 +54,32 @@
     }
     .send:hover { border-color: rgba(242, 239, 230, 1); }
     body.can-send .send { opacity: 1; pointer-events: auto; animation: call 1.6s ease-in-out infinite; }
+    /* снаружи: 10 секунд звука вокруг — дополнить планету */
+    .outside {
+      position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%); z-index: 3;
+      display: flex; flex-direction: column; align-items: center; gap: 14px; width: min(94vw, 720px);
+      opacity: 0; pointer-events: none; transition: opacity .6s ease;
+    }
+    body.show-outside .outside { opacity: 1; pointer-events: auto; }
+    .outside__status { font-size: 12px; letter-spacing: .12em; color: var(--cream); text-align: center; }
+    .outside__btns { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
+    body.is-recording .outside__btns { visibility: hidden; }
+    .outside__or { font-size: 11px; letter-spacing: .1em; color: var(--muted); padding: 0 4px; }
+    .obtn {
+      font: 300 12px/1 'IBM Plex Mono', monospace; letter-spacing: .08em; color: var(--cream);
+      background: rgba(7, 8, 10, .85); border: 1px solid rgba(242, 239, 230, .35);
+      border-radius: 999px; padding: 9px 16px; cursor: pointer; transition: border-color .3s ease;
+    }
+    .obtn:hover { border-color: rgba(242, 239, 230, .85); }
+    .obtn--rec { border-color: rgba(232, 40, 46, .7); }
+    .obtn--rec::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 9px; border-radius: 50%; background: #ff5a5f; box-shadow: 0 0 10px 2px rgba(255,90,95,.6); vertical-align: 1px; }
+    .tip {
+      position: fixed; left: clamp(20px, 5vw, 96px); top: clamp(20px, 8vh, 88px);
+      font-size: 11px; letter-spacing: .12em; color: var(--muted); opacity: .6;
+      pointer-events: none; transition: opacity 1.2s ease;
+    }
+    body.was-dragged .tip, body.is-inside .tip { opacity: 0; }
+    body.is-dragging canvas { cursor: grabbing !important; }
     .reset {
       position: fixed; right: 20px; bottom: 20px;
       font: 300 10px/1 'IBM Plex Mono', monospace; letter-spacing: .1em; color: var(--muted);
@@ -99,11 +125,6 @@
   <div class="spot spot--teal"></div>
   <canvas id="c"></canvas>
 
-  <header class="head">
-    <p class="kicker">04 — sketch</p>
-    <h1 class="title">the sky</h1>
-    <p class="sub">the orbit is learning · the shared planet is everyone</p>
-  </header>
 
   <dl class="hud">
     <dt>orbit · stations heard</dt><dd data-hud="passed">0 / 3</dd>
@@ -114,6 +135,18 @@
 
   <p class="hint" data-hint>start with your planet of emotions</p>
   <button type="button" class="send" data-send>send your point to the shared planet →</button>
+  <div class="outside" data-outside>
+    <p class="outside__status" data-outside-status>hear what is around you · 10 seconds</p>
+    <div class="outside__btns">
+      <button type="button" class="obtn obtn--rec" data-rec>record 10 sec</button>
+      <span class="outside__or">or the sound of</span>
+      <button type="button" class="obtn" data-place="forest">forest</button>
+      <button type="button" class="obtn" data-place="city">city</button>
+      <button type="button" class="obtn" data-place="sea">sea</button>
+      <button type="button" class="obtn" data-place="rain">rain</button>
+    </div>
+  </div>
+  <p class="tip" data-tip>drag the sky to explore · scroll to zoom</p>
   <button type="button" class="reset" data-reset>forget my planet</button>
 
   <div class="room" data-room><iframe title="inside" data-frame allow="microphone; autoplay"></iframe></div>
