@@ -27,8 +27,14 @@
   // внутри карты (map.html) звезда открывается во фрейме: ?embed=1&star=rhythm
   const params = new URLSearchParams(location.search);
   const EMBED = params.get('embed') === '1';
+  // mode=feel — это не урок, а сама планета эмоций: здесь человек вводит, как он сейчас
+  const FEEL = EMBED && params.get('mode') === 'feel';
+  // w=… — смесь, которую человек уже налил в свою планету (6 чисел, по состояниям)
+  const PRESET = (params.get('w') || '').split(',').filter(Boolean).map(Number);
+  const LISTEN_S = 12;           // столько секунд нужно послушать станцию, чтобы урок считался пройденным
   if (EMBED) {
     document.body.classList.add('is-embed');
+    if (FEEL) document.body.classList.add('is-feel');
     // Esc внутри фрейма — назад в небо
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && window.parent !== window) window.parent.postMessage({ type: 'biophilia:back' }, location.origin);
@@ -59,6 +65,14 @@
     rhythm:  { line: 'teaches you to hear repetition and the break', step: 0.24, voice: 'pluck', density: 1.0, accentEvery: 4 },
     timbre:  { line: 'teaches you to hear what a sound is made of',  step: 0.9,  voice: 'pad',   density: 0.8 },
     silence: { line: 'teaches you to hear the pause between sounds', step: 1.3,  voice: 'bell',  density: 0.45 },
+    feel:    { line: 'how are you right now? pour states into your planet', step: 0.9, voice: 'bell', density: 0.6 },
+  };
+
+  // на станции орбиты: что именно слушать в своей смеси
+  const LISTEN_FOR = {
+    rhythm:  'your blend as a pulse: calm slows it, anxiety breaks it · paint to draw your own beat',
+    timbre:  'your blend as the colour of a sound: bright states open it, dark states close it',
+    silence: 'your blend with room to breathe: listen to the pauses and the echo between notes',
   };
 
   const MOTION_SPEED = { calm: 0.15, burst: 0.3, jitter: 1.2, breath: 0.2, sink: 0.1, bounce: 0.6 };
@@ -399,12 +413,13 @@
     reportToMap();
   }
 
-  // сообщаем карте: звезда пройдена, какая смесь и какой ритм нарисован
+  // сообщаем карте: какая смесь, какой ритм нарисован и прослушан ли урок
+  let heard = 0, passed = false;
   function reportToMap() {
-    if (!EMBED || mix.W === 0 || window.parent === window) return;
+    if (!EMBED || window.parent === window || (mix.W === 0 && !passed)) return;
     window.parent.postMessage({
-      type: 'biophilia:star',
-      star,
+      type: FEEL ? 'biophilia:feel' : 'biophilia:star',
+      star, passed,
       blend: mix.name, extra: mix.extra,
       weights: mix.ws.map((w) => +w.toFixed(2)),
       colors: STATES.map((s) => s.color),
@@ -414,7 +429,16 @@
   }
 
   function updateHint() {
-    if (mode === 'paint') {
+    if (EMBED && passed) {
+      hint.textContent = 'you heard it · the planet moves on — back to the sky (esc)';
+      hint.classList.remove('is-hidden');
+    } else if (FEEL && mix.W > 0) {
+      hint.textContent = 'your planet has its blend · back to the sky (esc), then fly to the first station';
+      hint.classList.remove('is-hidden');
+    } else if (FEEL) {
+      hint.innerHTML = 'how are you right now<span>?</span> pour states into your planet';
+      hint.classList.remove('is-hidden');
+    } else if (mode === 'paint') {
       hint.textContent = `brush: ${STATES[brush].id} — draw around the star, the shape becomes the rhythm`;
       hint.classList.toggle('is-hidden', strokes.length > 0);
     } else {
@@ -425,7 +449,7 @@
 
   function updateHud() {
     const st = STARS[star];
-    hud.star.textContent = star;
+    hud.star.textContent = FEEL ? 'your planet' : star;
     hud.blend.textContent = mix.name || 'none';
     hud.tempo.textContent = pattern.active ? `${(STEPS / loopLen()).toFixed(1)} steps / s` : `${(mix.tempo / st.step).toFixed(1)} / s`;
     hud.density.textContent = (st.density * mix.density).toFixed(2);
@@ -656,6 +680,21 @@
     ctx.fillStyle = CREAM;
     ctx.beginPath(); ctx.arc(cx, cy, 4 + flash * 1.5, 0, Math.PI * 2); ctx.fill();
 
+    // станция орбиты: кольцо прослушивания — урок пройден, когда оно замкнулось
+    if (EMBED && !FEEL) {
+      if (!passed && ac && ac.state === 'running' && soundOn) {
+        heard += dt;
+        if (heard >= LISTEN_S) { passed = true; reportToMap(); updateHint(); }
+      }
+      const lr = M * 0.1, u = passed ? 1 : heard / LISTEN_S;
+      ctx.lineWidth = 1; ctx.lineCap = 'round';
+      ctx.strokeStyle = CREAM; ctx.globalAlpha = 0.12;
+      ctx.beginPath(); ctx.arc(cx, cy, lr, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = passed ? mix.color : CREAM; ctx.globalAlpha = passed ? 0.8 : 0.6;
+      ctx.beginPath(); ctx.arc(cx, cy, lr, -Math.PI / 2, -Math.PI / 2 + u * Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
     // кольцо смеси: доли состояний дугами
     if (mixed) {
       const rr = M * 0.115;
@@ -756,12 +795,23 @@
   window.addEventListener('resize', resize);
   resize();
   mix = computeMix();
-  if (EMBED && STARS[params.get('star')]) {
+  if (FEEL) {
+    star = 'feel';
+    starTag.querySelector('small').textContent = 'your planet';
+    starName.textContent = 'emotions';
+  } else if (EMBED && STARS[params.get('star')]) {
     star = params.get('star');
     starName.textContent = star;
     starBtns.forEach((b) => b.classList.toggle('is-on', b.dataset.star === star));
   }
-  starLine.textContent = STARS[star].line;
+  if (EMBED && PRESET.length === STATES.length) PRESET.forEach((w, k) => (drops[k] = Math.max(0, Math.min(MAX_W, w || 0))));
+  starLine.textContent = (EMBED && LISTEN_FOR[star]) || STARS[star].line;
+  if (EMBED) $('.title').innerHTML = FEEL ? 'planet of<br>emotions' : `${star}<br>station`;
   applyMix();
+  if (EMBED) {
+    // внутри карты звезда звучит сразу: в неё влетели кликом
+    ensureAudio();
+    window.addEventListener('pointerdown', ensureAudio);
+  }
   requestAnimationFrame(draw);
 })();
