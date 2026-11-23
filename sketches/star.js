@@ -433,7 +433,10 @@
   }
 
   function updateHint() {
-    if (EMBED && passed) {
+    if (askTap) {                       // звук ещё не включён — без касания урок не начнётся
+      hint.textContent = 'tap anywhere to hear this station';
+      hint.classList.remove('is-hidden');
+    } else if (EMBED && passed) {
       hint.textContent = 'you heard it · the planet moves on — back to the sky (esc)';
       hint.classList.remove('is-hidden');
     } else if (FEEL && mix.W > 0) {
@@ -688,7 +691,7 @@
     // браузер мог не дать звуку стартовать без касания внутри — просим коснуться
     if (EMBED && ac) {
       const mute = ac.state !== 'running';
-      if (mute && !askTap) { askTap = true; hint.textContent = 'tap anywhere to hear'; hint.classList.remove('is-hidden'); }
+      if (mute && !askTap) { askTap = true; updateHint(); }
       else if (!mute && askTap) { askTap = false; updateHint(); }
     }
     if (EMBED && !FEEL) {
@@ -697,6 +700,14 @@
         if (heard >= LISTEN_S) { passed = true; reportToMap(); updateHint(); }
       }
       const lr = M * 0.1, u = passed ? 1 : heard / LISTEN_S;
+      if (askTap) {
+        const k2 = (t * 0.6) % 1;
+        ctx.strokeStyle = CREAM; ctx.lineWidth = 1; ctx.globalAlpha = 0.6 * (1 - k2);
+        ctx.beginPath(); ctx.arc(cx, cy, lr * (1 + k2 * 0.6), 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 0.85; ctx.fillStyle = CREAM; ctx.textAlign = 'center';
+        ctx.font = '300 12px "IBM Plex Mono", monospace';
+        ctx.fillText('tap to listen', cx, cy + lr + 22);
+      }
       ctx.lineWidth = 1; ctx.lineCap = 'round';
       ctx.strokeStyle = CREAM; ctx.globalAlpha = 0.12;
       ctx.beginPath(); ctx.arc(cx, cy, lr, 0, Math.PI * 2); ctx.stroke();
