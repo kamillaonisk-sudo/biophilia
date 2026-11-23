@@ -24,6 +24,17 @@
   const STEPS = 16;
   const MAX_W = 5;
 
+  // внутри карты (map.html) звезда открывается во фрейме: ?embed=1&star=rhythm
+  const params = new URLSearchParams(location.search);
+  const EMBED = params.get('embed') === '1';
+  if (EMBED) {
+    document.body.classList.add('is-embed');
+    // Esc внутри фрейма — назад в небо
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && window.parent !== window) window.parent.postMessage({ type: 'biophilia:back' }, location.origin);
+    });
+  }
+
   const STATES = [
     { id: 'calm',       color: '#7ad7ff', motion: 'calm',   harms: [4, 6, 8, 9, 12],            tempo: 0.55, density: 0.55, jitter: 0.05, wet: 0.6,  oct: 1,   bright: 0.35, dir: 'random' },
     { id: 'wonder',     color: '#ffe14d', motion: 'burst',  harms: [8, 10, 12, 15, 18, 20, 24], tempo: 1.2,  density: 0.7,  jitter: 0.2,  wet: 0.45, oct: 1,   bright: 0.9,  dir: 'up' },
@@ -163,7 +174,7 @@
   function ensureAudio() {
     if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
     ac = new (window.AudioContext || window.webkitAudioContext)();
-    master = ac.createGain(); master.gain.value = soundOn ? 0.9 : 0;
+    master = ac.createGain(); master.gain.value = soundOn ? 0.7 : 0;
     const comp = ac.createDynamicsCompressor();
     comp.threshold.value = -18; comp.ratio.value = 3;
     master.connect(comp); comp.connect(ac.destination);
@@ -385,6 +396,21 @@
     });
     updateHint();
     updateHud();
+    reportToMap();
+  }
+
+  // сообщаем карте: звезда пройдена, какая смесь и какой ритм нарисован
+  function reportToMap() {
+    if (!EMBED || mix.W === 0 || window.parent === window) return;
+    window.parent.postMessage({
+      type: 'biophilia:star',
+      star,
+      blend: mix.name, extra: mix.extra,
+      weights: mix.ws.map((w) => +w.toFixed(2)),
+      colors: STATES.map((s) => s.color),
+      rhythm: pattern.active ? pattern.steps.map((a) => (a.length ? (a[0].accent ? 2 : 1) : 0)) : null,
+      loop: loopLen(),
+    }, location.origin);
   }
 
   function updateHint() {
@@ -724,12 +750,17 @@
     soundOn = !soundOn;
     soundBtn.textContent = soundOn ? 'sound: on' : 'sound: off';
     soundBtn.setAttribute('aria-pressed', String(soundOn));
-    if (ac) master.gain.setTargetAtTime(soundOn ? 0.9 : 0, ac.currentTime, 0.2);
+    if (ac) master.gain.setTargetAtTime(soundOn ? 0.7 : 0, ac.currentTime, 0.2);
   });
 
   window.addEventListener('resize', resize);
   resize();
   mix = computeMix();
+  if (EMBED && STARS[params.get('star')]) {
+    star = params.get('star');
+    starName.textContent = star;
+    starBtns.forEach((b) => b.classList.toggle('is-on', b.dataset.star === star));
+  }
   starLine.textContent = STARS[star].line;
   applyMix();
   requestAnimationFrame(draw);

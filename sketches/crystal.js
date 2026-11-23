@@ -25,6 +25,17 @@
   const CAL = { cLo: 200, cHi: 5000, fLo: 0.01, fHi: 0.6, dbLo: -55, dbHi: -13 };
   const DEBUG = location.hash === '#debug';
 
+  // внутри карты (map.html): ?embed=1&colors=7ad7ff,ffb238&w=3,1
+  // смесь эмоций с личной планеты окрашивает кристалл
+  const params = new URLSearchParams(location.search);
+  const EMBED = params.get('embed') === '1';
+  const BLEND = (() => {
+    const c = params.get('colors');
+    if (!c) return null;
+    const ws = (params.get('w') || '').split(',').map(Number);
+    return c.split(',').map((col, i) => ({ col: '#' + col, w: ws[i] > 0 ? ws[i] : 1 }));
+  })();
+
   // ---------- DOM ----------
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
@@ -35,6 +46,7 @@
     play: $('[data-play]'),
     sep: $('.sep'),
     again: $('[data-again]'),
+    plant: $('[data-plant]'),
     status: $('[data-status]'),
     hud: Object.fromEntries([...document.querySelectorAll('[data-hud]')].map((el) => [el.dataset.hud, el])),
   };
@@ -45,7 +57,14 @@
   const easeOut = (u) => 1 - Math.pow(1 - u, 3);
   const hexToRgb = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
   const rgba = (h, a) => { const [r, g, b] = hexToRgb(h); return `rgba(${r},${g},${b},${a})`; };
-  const colorFor = (bright) => COLORS[Math.min(COLORS.length - 1, Math.floor(bright * COLORS.length))];
+  const colorFor = (bright) => {
+    if (BLEND) {                       // цвет из смеси эмоций, по долям
+      let r = Math.random() * BLEND.reduce((s, b) => s + b.w, 0);
+      for (const b of BLEND) { r -= b.w; if (r <= 0) return b.col; }
+      return BLEND[0].col;
+    }
+    return COLORS[Math.min(COLORS.length - 1, Math.floor(bright * COLORS.length))];
+  };
 
   const sprites = {};
   function sprite(color) {
@@ -72,7 +91,7 @@
     if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
     ac = new (window.AudioContext || window.webkitAudioContext)();
     master = ac.createGain();
-    master.gain.value = 0.9;
+    master.gain.value = 0.7;
     master.connect(ac.destination);
 
     verb = ac.createConvolver();
@@ -331,7 +350,22 @@
   function setDone(done) {
     ui.play.hidden = !done;
     ui.again.hidden = !done;
+    ui.plant.hidden = !(done && EMBED);
     [ui.rec, ...ui.demos, ui.sep].forEach((b) => (b.hidden = done));
+  }
+
+  // снимок кристалла — он полетит на общую планету
+  function snapshot() {
+    const size = 320, half = M * 0.47;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    c.getContext('2d').drawImage(canvas, (cx - half) * DPR, (cy - half) * DPR, half * 2 * DPR, half * 2 * DPR, 0, 0, size, size);
+    return c.toDataURL('image/png');
+  }
+
+  function plant() {
+    if (window.parent === window) return;
+    window.parent.postMessage({ type: 'biophilia:seed', image: snapshot(), source, n: crystal ? crystal.n : 6 }, location.origin);
   }
 
   function begin(src) {
@@ -591,7 +625,8 @@
 
       const el = ac.currentTime - startAt;
       while (mode === 'growing' && nextSlice < S && el >= (nextSlice + 1) * SLICE) {
-        const sf = acc.n
+        // если за один кадр прошло несколько срезов, второй и дальше повторяют последний замер
+        const sf = acc && acc.n
           ? { loud: acc.loud / acc.n, bright: acc.bright / acc.n, flat: acc.flat / acc.n, low: acc.low / acc.n }
           : lastF || { loud: 0, bright: 0.5, flat: 0.5, low: 0.3 };
         if (DEBUG && acc && acc.n) {
@@ -638,6 +673,14 @@
   ui.demos.forEach((b) => b.addEventListener('click', () => startDemo(b.dataset.demo)));
   ui.play.addEventListener('click', playCrystal);
   ui.again.addEventListener('click', reset);
+  ui.plant.addEventListener('click', plant);
+  if (EMBED) {
+    document.body.classList.add('is-embed');
+    // Esc внутри фрейма — назад в небо
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && window.parent !== window) window.parent.postMessage({ type: 'biophilia:back' }, location.origin);
+    });
+  }
   window.addEventListener('pointermove', (e) => probe(e.clientX, e.clientY));
   window.addEventListener('pointerdown', (e) => { if (e.target === canvas) probe(e.clientX, e.clientY); });
   window.addEventListener('resize', resize);
