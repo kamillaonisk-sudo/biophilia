@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>the sky</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+  <style>
+    :root { --cream: #f2efe6; --muted: #b9b6ac; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      color: var(--cream);
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-weight: 300;
+      background: radial-gradient(ellipse 70% 60% at 50% 52%, #12141a 0%, #08090c 60%, #050607 100%);
+    }
+    .spot { position: fixed; border-radius: 50%; filter: blur(30px); mix-blend-mode: screen; pointer-events: none; }
+    .spot--orange { width: 42vmax; height: 42vmax; left: -14vmax; bottom: -16vmax; background: radial-gradient(circle, rgba(255,138,61,.26), transparent 62%); }
+    .spot--pink   { width: 36vmax; height: 36vmax; right: -12vmax; top: -14vmax; background: radial-gradient(circle, rgba(255,122,198,.2), transparent 62%); }
+    .spot--teal   { width: 34vmax; height: 34vmax; right: -10vmax; bottom: -14vmax; background: radial-gradient(circle, rgba(94,224,200,.18), transparent 62%); }
+
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+    .head { position: fixed; left: clamp(20px, 5vw, 96px); top: clamp(20px, 8vh, 88px); pointer-events: none; z-index: 2; transition: opacity .6s ease; }
+    .kicker { font-size: 13px; letter-spacing: .14em; color: var(--muted); }
+    .title { margin-top: 18px; font-family: 'Major Mono Display', monospace; font-weight: 400; font-size: clamp(26px, 3vw, 44px); line-height: 1.08; }
+    .sub { margin-top: 14px; font-size: 12px; letter-spacing: .08em; color: var(--muted); }
+
+    .hud {
+      position: fixed; right: clamp(20px, 5vw, 96px); top: clamp(20px, 8vh, 88px);
+      display: grid; grid-template-columns: auto auto; gap: 6px 18px;
+      font-size: 11px; letter-spacing: .08em; color: var(--muted);
+      pointer-events: none; z-index: 2; transition: opacity .6s ease;
+    }
+    .hud dd { color: var(--cream); text-align: right; font-variant-numeric: tabular-nums; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .hint {
+      position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%);
+      font-size: 12px; letter-spacing: .12em; color: var(--muted); white-space: nowrap;
+      pointer-events: none; transition: opacity .6s ease;
+    }
+    .reset {
+      position: fixed; right: 20px; bottom: 20px;
+      font: 300 10px/1 'IBM Plex Mono', monospace; letter-spacing: .1em; color: var(--muted);
+      background: none; border: 0; opacity: .45; cursor: pointer;
+    }
+    .reset:hover { opacity: 1; }
+    body.is-inside .head, body.is-inside .hud, body.is-inside .hint, body.is-inside .reset { opacity: 0; }
+
+    /* «комната» — звезда или кристалл, в которые влетели */
+    .room { position: fixed; inset: 0; z-index: 5; opacity: 0; pointer-events: none; transition: opacity .7s ease; }
+    .room.is-open { opacity: 1; pointer-events: auto; }
+    .room iframe { width: 100%; height: 100%; border: 0; display: block; background: transparent; }
+    .back {
+      position: fixed; left: 50%; top: 16px; transform: translateX(-50%); z-index: 6;
+      display: flex; align-items: center; gap: 10px;
+      font: 400 14px/1 'IBM Plex Mono', monospace; letter-spacing: .08em; color: var(--cream);
+      background: rgba(7, 8, 10, .92); border: 1px solid rgba(242, 239, 230, .75);
+      border-radius: 999px; padding: 12px 22px; cursor: pointer;
+      box-shadow: 0 0 22px 2px rgba(242, 239, 230, .18);
+      opacity: 0; pointer-events: none; transition: opacity .5s ease, border-color .3s ease;
+    }
+    .back small { font-size: 10px; letter-spacing: .12em; color: var(--muted); border: 1px solid rgba(242,239,230,.3); border-radius: 4px; padding: 2px 5px; }
+    .back:hover { border-color: rgba(242, 239, 230, 1); }
+    body.is-inside .back, body.is-near .back { opacity: 1; pointer-events: auto; }
+    body.is-inside .back { animation: call 1.6s ease-in-out 3 .8s; }
+    @keyframes call { 50% { box-shadow: 0 0 30px 6px rgba(242, 239, 230, .4); } }
+
+    .replay {
+      position: fixed; left: 20px; bottom: 20px;
+      font: 300 10px/1 'IBM Plex Mono', monospace; letter-spacing: .1em; color: var(--muted);
+      text-decoration: none; opacity: .55;
+    }
+    .replay:hover { opacity: 1; }
+    body.is-inside .replay { opacity: 0; pointer-events: none; }
+
+    .grain { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: overlay; opacity: .22; z-index: 4; }
+    @media (max-width: 720px) { .hud { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="spot spot--orange"></div>
+  <div class="spot spot--pink"></div>
+  <div class="spot spot--teal"></div>
+  <canvas id="c"></canvas>
+
+  <header class="head">
+    <p class="kicker">04 — sketch</p>
+    <h1 class="title">the sky</h1>
+    <p class="sub">your planet of emotions learns · the shared planet grows</p>
+  </header>
+
+  <dl class="hud">
+    <dt>stars passed</dt><dd data-hud="passed">0 / 3</dd>
+    <dt>your blend</dt><dd data-hud="blend">—</dd>
+    <dt>your rhythm</dt><dd data-hud="rhythm">—</dd>
+    <dt>seeds on the shared planet</dt><dd data-hud="seeds">—</dd>
+  </dl>
+
+  <p class="hint" data-hint>fly into a star around your planet</p>
+  <button type="button" class="reset" data-reset>forget my planet</button>
+
+  <div class="room" data-room><iframe title="inside" data-frame allow="microphone; autoplay"></iframe></div>
+  <button type="button" class="back" data-back>← back to the sky <small>esc</small></button>
+  <a class="replay" href="../index.html">↺ replay the birth of the world</a>
+
+  <svg class="grain" aria-hidden="true">
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>
+    <rect width="100%" height="100%" filter="url(#grain)"/>
+  </svg>
+
+  <script src="map.js"></script>
+</body>
+</html>
