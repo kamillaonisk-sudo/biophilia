@@ -28,7 +28,7 @@
     .head { position: fixed; left: clamp(20px, 5vw, 96px); top: clamp(20px, 8vh, 88px); pointer-events: none; z-index: 2; }
     .kicker { font-size: 13px; letter-spacing: .14em; color: var(--muted); }
     .title { margin-top: 18px; font-family: 'Major Mono Display', monospace; font-weight: 400; font-size: clamp(24px, 2.8vw, 40px); line-height: 1.08; }
-    .sub { margin-top: 16px; font-size: 12px; letter-spacing: .08em; color: var(--muted); }
+    .sub { margin-top: 16px; max-width: min(440px, 36vw); font-size: 12px; line-height: 1.7; letter-spacing: .08em; color: var(--muted); }
 
     .hud {
       position: fixed; right: clamp(20px, 5vw, 96px); top: clamp(20px, 8vh, 88px);
@@ -110,6 +110,11 @@
 
     /* внутри карты (map.html): звезду выбирают в небе, переключатель и номер эскиза не нужны */
     body.is-embed .kicker, body.is-embed [data-star], body.is-embed .controls .sep, body.is-embed .controls .gap:first-of-type { display: none; }
+    /* инструменты станций */
+    .slider { display: inline-flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: .1em; color: var(--muted); }
+    .slider input { width: 140px; accent-color: #f2efe6; }
+    .btn--done { border-color: rgba(242, 239, 230, .8); box-shadow: 0 0 16px 1px rgba(242, 239, 230, .18); }
+
     /* планета эмоций: смесь и рисунок, легенда про уроки не нужна */
     body.is-feel .legend { display: none; }
 

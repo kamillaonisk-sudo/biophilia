@@ -25,7 +25,7 @@
   // подписи у крупных звёзд: где-то сейчас кто-то чувствует вот это
   const CITIES = ['reykjavík', 'lisbon', 'tokyo', 'lagos', 'são paulo', 'mumbai', 'tbilisi', 'mexico city',
                   'seoul', 'cairo', 'oslo', 'nairobi', 'buenos aires', 'jakarta', 'almaty', 'berlin', 'montréal', 'hanoi'];
-  const FEELINGS = ['calm', 'wonder', 'anxiety', 'tenderness', 'melancholy', 'joy',
+  const FEELINGS = ['calm', 'wonder', 'anxiety', 'tenderness', 'melancholy', 'joy', 'anger', 'fear', 'hope', 'gratitude', 'serenity', 'yearning',
                     'contemplation', 'awe', 'longing', 'delight', 'nostalgia', 'warmth', 'reverie', 'solitude'];
 
   const root = document.getElementById('intro');

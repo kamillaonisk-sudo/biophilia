@@ -28,13 +28,27 @@
     { id: 'tenderness', color: '#ff7ac6', harms: [5, 6, 8, 10],               oct: 1,   tempo: 0.6 },
     { id: 'melancholy', color: '#b18cff', harms: [4, 5, 6, 7],                oct: 0.5, tempo: 0.45 },
     { id: 'joy',        color: '#ffb238', harms: [6, 8, 9, 10, 12, 16],       oct: 1,   tempo: 1.4 },
+    { id: 'anger',      color: '#ff8a3d', harms: [6, 9, 12, 14, 18],          oct: 0.5, tempo: 1.6 },
+    { id: 'fear',       color: '#7aa8ff', harms: [7, 11, 13, 17, 19],         oct: 1,   tempo: 1.3 },
+    { id: 'hope',       color: '#9cff6e', harms: [6, 8, 10, 12, 15],          oct: 1,   tempo: 0.9 },
+    { id: 'gratitude',  color: '#5ee0c8', harms: [4, 6, 8, 10, 12],           oct: 1,   tempo: 0.7 },
   ];
+  const zeros = () => STATES.map(() => 0);
+  const pad = (ws) => (ws ? STATES.map((_, k) => ws[k] || 0) : ws);   // старые сохранения — 6 состояний
   const BLENDS = {
     'calm+wonder': 'contemplation', 'anxiety+calm': 'vigilance', 'calm+tenderness': 'warmth',
     'calm+melancholy': 'solitude', 'calm+joy': 'contentment', 'anxiety+wonder': 'awe',
     'tenderness+wonder': 'enchantment', 'melancholy+wonder': 'reverie', 'joy+wonder': 'delight',
     'anxiety+tenderness': 'care', 'anxiety+melancholy': 'dread', 'anxiety+joy': 'excitement',
     'melancholy+tenderness': 'longing', 'joy+tenderness': 'affection', 'joy+melancholy': 'nostalgia',
+    'anger+anxiety': 'agitation', 'anger+calm': 'resolve', 'anger+fear': 'defiance', 'anger+gratitude': 'ambivalence',
+    'anger+hope': 'determination', 'anger+joy': 'zeal', 'anger+melancholy': 'bitterness', 'anger+tenderness': 'protectiveness',
+    'anger+wonder': 'indignation', 'anxiety+fear': 'alarm', 'calm+fear': 'caution', 'fear+gratitude': 'relief',
+    'fear+hope': 'suspense', 'fear+joy': 'thrill', 'fear+melancholy': 'despair', 'fear+tenderness': 'vulnerability',
+    'fear+wonder': 'the sublime', 'anxiety+gratitude': 'humility', 'calm+gratitude': 'peace', 'gratitude+hope': 'faith',
+    'gratitude+joy': 'bliss', 'gratitude+melancholy': 'bittersweet', 'gratitude+tenderness': 'love', 'gratitude+wonder': 'reverence',
+    'anxiety+hope': 'anticipation', 'calm+hope': 'serenity', 'hope+joy': 'optimism', 'hope+melancholy': 'yearning',
+    'hope+tenderness': 'devotion', 'hope+wonder': 'inspiration',
   };
   const SONGS = ['moon', 'thunderbolt', 'crystalline', 'cosmogony', 'dark matter',
                  'hollow', 'virus', 'sacrifice', 'mutual core', 'solstice'];
@@ -100,12 +114,13 @@
   // wave — звуковая волна места вокруг планеты (то, что снаружи)
   const empty = () => ({ blend: null, drops: null, strokes: [], stars: {}, rhythm: null, wave: null, sent: null });
   let state = (() => { try { return { ...empty(), ...JSON.parse(localStorage.getItem(STORE)) }; } catch (e) { return empty(); } })();
+  state.blend = pad(state.blend); state.drops = pad(state.drops);
   function save() { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* живём без сохранения */ } }
 
   const sum = (ws) => ws.reduce((a, b) => a + b, 0);
   function blendOf(ws) {
     const W = ws ? sum(ws) : 0;
-    if (W < 0.05) return { W: 0, ws: ws || [0, 0, 0, 0, 0, 0], color: CREAM, name: '' };
+    if (W < 0.05) return { W: 0, ws: ws || zeros(), color: CREAM, name: '' };
     const order = ws.map((w, k) => ({ k, w, share: w / W })).filter((o) => o.w > 0.05).sort((a, b) => b.w - a.w);
     const top = order[0];
     const name = order.length === 1 || top.share >= 0.75
@@ -131,7 +146,7 @@
   function seedOf(ws) { return ws.reduce((h, w, k) => (h * 31 + Math.round(w * 10) + k) | 0, 17); }
   function mySteps() {
     if (state.rhythm && state.rhythm.steps && state.rhythm.steps.some(Boolean)) return state.rhythm.steps;
-    return makeSteps(state.blend || [0, 0, 0, 0, 0, 0], mulberry32(seedOf(state.blend || [0])));
+    return makeSteps(state.blend || zeros(), mulberry32(seedOf(state.blend || [0])));
   }
 
   // ---------- геометрия мира (в долях меньшей стороны экрана) ----------
@@ -156,9 +171,9 @@
   }
   const others = Array.from({ length: PEOPLE }, (_, i) => {
     const rnd = mulberry32(i * 7919 + 3);
-    const ws = [0, 0, 0, 0, 0, 0];
-    ws[Math.floor(rnd() * 6)] += 1 + Math.floor(rnd() * 4);
-    if (rnd() < 0.7) ws[Math.floor(rnd() * 6)] += 1 + Math.floor(rnd() * 3);
+    const ws = zeros();
+    ws[Math.floor(rnd() * STATES.length)] += 1 + Math.floor(rnd() * 4);
+    if (rnd() < 0.7) ws[Math.floor(rnd() * STATES.length)] += 1 + Math.floor(rnd() * 3);
     return person(ws, makeSteps(ws, rnd), Math.sqrt(rnd()) * 0.86, rnd() * Math.PI * 2, rnd() < 0.2 ? rand(2.6, 3.6) : rand(1.4, 2.4));
   });
   const specks = Array.from({ length: 110 }, (_, i) => {
