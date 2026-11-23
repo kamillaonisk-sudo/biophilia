@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>crystal from sound</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+  <style>
+    :root { --cream: #f2efe6; --muted: #b9b6ac; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      color: var(--cream);
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-weight: 300;
+      background: radial-gradient(ellipse 70% 60% at 50% 50%, #12141a 0%, #08090c 60%, #050607 100%);
+    }
+    .spot { position: fixed; border-radius: 50%; filter: blur(30px); mix-blend-mode: screen; pointer-events: none; }
+    .spot--violet { width: 44vmax; height: 44vmax; left: -16vmax; top: -18vmax; background: radial-gradient(circle, rgba(177,140,255,.2), transparent 62%); }
+    .spot--teal   { width: 36vmax; height: 36vmax; right: -12vmax; bottom: -16vmax; background: radial-gradient(circle, rgba(94,224,200,.18), transparent 62%); }
+
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+    .head { position: fixed; left: clamp(20px, 5vw, 96px); top: clamp(20px, 8vh, 88px); pointer-events: none; }
+    .kicker { font-size: 13px; letter-spacing: .14em; color: var(--muted); }
+    .title { margin-top: 18px; font-family: 'Major Mono Display', monospace; font-weight: 400; font-size: clamp(26px, 3vw, 44px); line-height: 1.08; }
+
+    .hud {
+      position: fixed; right: clamp(20px, 5vw, 96px); top: clamp(20px, 8vh, 88px);
+      display: grid; grid-template-columns: auto auto; gap: 6px 18px;
+      font-size: 11px; letter-spacing: .08em; color: var(--muted);
+      pointer-events: none;
+    }
+    .hud dd { color: var(--cream); text-align: right; font-variant-numeric: tabular-nums; }
+
+    .legend {
+      position: fixed; left: clamp(20px, 5vw, 96px); bottom: 120px;
+      font-size: 11px; line-height: 1.9; letter-spacing: .06em; color: var(--muted); opacity: .75;
+      pointer-events: none;
+    }
+    .legend b { font-weight: 400; color: var(--cream); }
+
+    .hint {
+      position: fixed; left: 50%; top: calc(50% + 40px); transform: translateX(-50%);
+      text-align: center; font-size: 12px; letter-spacing: .14em; line-height: 2; color: var(--muted);
+      pointer-events: none; transition: opacity .8s ease;
+    }
+    body:not(.is-empty) .hint { opacity: 0; }
+
+    .controls {
+      position: fixed; left: 50%; bottom: 36px; transform: translateX(-50%);
+      display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px;
+      width: min(92vw, 760px);
+    }
+    .sep { font-size: 11px; letter-spacing: .1em; color: var(--muted); opacity: .7; padding: 0 4px; }
+    .btn {
+      font: 300 12px/1 'IBM Plex Mono', ui-monospace, monospace;
+      letter-spacing: .08em; color: var(--cream);
+      background: rgba(7, 8, 10, .82);
+      border: 1px solid rgba(242, 239, 230, .35);
+      border-radius: 999px; padding: 9px 16px; cursor: pointer;
+      transition: border-color .3s ease, opacity .3s ease;
+    }
+    .btn:hover, .btn:focus-visible { border-color: rgba(242, 239, 230, .8); outline: none; }
+    .btn--rec { border-color: rgba(232, 40, 46, .7); }
+    .btn--rec::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 9px; border-radius: 50%; background: #ff5a5f; box-shadow: 0 0 10px 2px rgba(255,90,95,.6); vertical-align: 1px; }
+    .btn[disabled] { opacity: .3; cursor: default; }
+    .btn[hidden], .sep[hidden] { display: none; }
+
+    .status {
+      position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%);
+      font-size: 11px; letter-spacing: .12em; color: var(--muted); white-space: nowrap;
+    }
+
+    .grain { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: overlay; opacity: .22; }
+
+    @media (max-width: 720px) {
+      .legend { display: none; }
+      .hud { top: auto; bottom: 150px; right: 20px; }
+      .status { bottom: 128px; }
+    }
+  </style>
+</head>
+<body class="is-empty">
+  <div class="spot spot--violet"></div>
+  <div class="spot spot--teal"></div>
+  <canvas id="c"></canvas>
+
+  <header class="head">
+    <p class="kicker">02 — sketch</p>
+    <h1 class="title">crystal<br>from sound</h1>
+  </header>
+
+  <dl class="hud" aria-live="off">
+    <dt>loudness</dt><dd data-hud="loud">—</dd>
+    <dt>pitch</dt><dd data-hud="bright">—</dd>
+    <dt>noise</dt><dd data-hud="flat">—</dd>
+    <dt>rays</dt><dd data-hud="sym">—</dd>
+    <dt>slice</dt><dd data-hud="slice">— / 48</dd>
+  </dl>
+
+  <p class="legend">
+    <b>branch length</b> — loudness<br>
+    <b>angle and colour</b> — pitch<br>
+    <b>crookedness</b> — noise<br>
+    <b>plates</b> — low frequencies<br>
+    <b>number of rays</b> — the first moments
+  </p>
+
+  <p class="hint">record 10 seconds of the world around you<br>or choose the sound of a place</p>
+
+  <p class="status" data-status></p>
+
+  <div class="controls">
+    <button type="button" class="btn btn--rec" data-rec>record 10 sec</button>
+    <span class="sep">or</span>
+    <button type="button" class="btn" data-demo="forest">forest</button>
+    <button type="button" class="btn" data-demo="city">city</button>
+    <button type="button" class="btn" data-demo="sea">sea</button>
+    <button type="button" class="btn" data-demo="rain">rain</button>
+    <button type="button" class="btn" data-play hidden>listen to the crystal</button>
+    <button type="button" class="btn" data-again hidden>again</button>
+  </div>
+
+  <svg class="grain" aria-hidden="true">
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>
+    <rect width="100%" height="100%" filter="url(#grain)"/>
+  </svg>
+
+  <script src="crystal.js"></script>
+</body>
+</html>

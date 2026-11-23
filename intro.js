@@ -677,7 +677,7 @@
     e.stopPropagation();
     const on = !Sound.on;
     Sound.setEnabled(on);
-    btnSound.textContent = on ? 'звук: вкл' : 'звук: выкл';
+    btnSound.textContent = on ? 'sound: on' : 'sound: off';
     btnSound.setAttribute('aria-pressed', String(on));
   });
   btnSkip.addEventListener('click', (e) => { e.stopPropagation(); skip(); });

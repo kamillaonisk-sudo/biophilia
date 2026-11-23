@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>star and cloud of states</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+  <style>
+    :root { --cream: #f2efe6; --muted: #b9b6ac; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      color: var(--cream);
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-weight: 300;
+      background: radial-gradient(ellipse 70% 60% at 50% 50%, #12141a 0%, #08090c 60%, #050607 100%);
+    }
+    .spot { position: fixed; border-radius: 50%; filter: blur(30px); mix-blend-mode: screen; pointer-events: none; }
+    .spot--orange { width: 40vmax; height: 40vmax; left: -14vmax; bottom: -16vmax; background: radial-gradient(circle, rgba(255,138,61,.22), transparent 62%); }
+    .spot--pink   { width: 34vmax; height: 34vmax; right: -12vmax; top: -14vmax; background: radial-gradient(circle, rgba(255,122,198,.2), transparent 62%); }
+
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    body.is-paint canvas { cursor: crosshair; }
+
+    .head { position: fixed; left: clamp(20px, 5vw, 96px); top: clamp(20px, 8vh, 88px); pointer-events: none; z-index: 2; }
+    .kicker { font-size: 13px; letter-spacing: .14em; color: var(--muted); }
+    .title { margin-top: 18px; font-family: 'Major Mono Display', monospace; font-weight: 400; font-size: clamp(24px, 2.8vw, 40px); line-height: 1.08; }
+    .sub { margin-top: 16px; font-size: 12px; letter-spacing: .08em; color: var(--muted); }
+
+    .hud {
+      position: fixed; right: clamp(20px, 5vw, 96px); top: clamp(20px, 8vh, 88px);
+      display: grid; grid-template-columns: auto auto; gap: 6px 18px;
+      font-size: 11px; letter-spacing: .08em; color: var(--muted);
+      pointer-events: none; z-index: 2;
+    }
+    .hud dd { color: var(--cream); text-align: right; font-variant-numeric: tabular-nums; }
+
+    .legend {
+      position: fixed; left: clamp(20px, 5vw, 96px); bottom: 110px;
+      font-size: 11px; line-height: 1.9; letter-spacing: .06em; color: var(--muted); opacity: .75;
+      pointer-events: none;
+    }
+    .legend b { font-weight: 400; color: var(--cream); }
+
+    /* пилюли состояний: двигаются вместе с облаками */
+    .state {
+      position: fixed; left: 0; top: 0;
+      font: 300 12px/1 'IBM Plex Mono', ui-monospace, monospace;
+      letter-spacing: .08em; color: var(--cream);
+      background: rgba(7, 8, 10, .78);
+      border: 1px solid rgba(242, 239, 230, .35);
+      border-radius: 999px; padding: 6px 13px;
+      cursor: pointer; white-space: nowrap;
+      transition: border-color .3s ease, box-shadow .3s ease;
+      will-change: transform;
+    }
+    .state:hover, .state:focus-visible { outline: none; border-color: var(--c); }
+    .state.is-on { border-color: var(--c); box-shadow: 0 0 14px 1px color-mix(in srgb, var(--c) 45%, transparent); }
+    .state .n { color: var(--c); margin-left: 6px; }
+    body.is-paint .state.is-brush { border-color: var(--c); background: color-mix(in srgb, var(--c) 22%, rgba(7,8,10,.9)); }
+
+    .tag {
+      position: fixed; left: 0; top: 0; text-align: center; pointer-events: none; will-change: transform;
+    }
+    .tag .name {
+      display: inline-block; font-size: 15px; letter-spacing: .1em; white-space: nowrap;
+      background: rgba(7, 8, 10, .85); border: 1px solid rgba(242, 239, 230, .4);
+      border-radius: 14px; padding: 7px 16px 8px;
+    }
+    .tag .name small { display: block; margin-bottom: 4px; font-size: 10px; letter-spacing: .14em; color: var(--muted); }
+    .tag .line { margin-top: 7px; font-size: 11px; letter-spacing: .06em; color: var(--muted); white-space: nowrap; }
+    .blend { margin-top: 26px; display: flex; flex-direction: column; gap: 6px; transition: opacity .6s ease; }
+    .blend small { font-size: 10px; letter-spacing: .14em; color: var(--muted); }
+    .blend b { font-family: 'Major Mono Display', monospace; font-weight: 400; font-size: clamp(20px, 2vw, 28px); line-height: 1.1; }
+    .blend em { font-style: normal; font-size: 12px; letter-spacing: .08em; color: var(--cream); }
+    .blend em:empty { display: none; }
+    .blend span { font-size: 11px; letter-spacing: .06em; color: var(--muted); }
+    .hud dd { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    body:not(.is-mixed) .blend { opacity: 0; }
+
+    .hint {
+      position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%);
+      font-size: 12px; letter-spacing: .12em; color: var(--muted); white-space: nowrap;
+      pointer-events: none; transition: opacity .8s ease;
+      animation: breathe 4s ease-in-out infinite;
+    }
+    .hint.is-hidden { opacity: 0; animation: none; }
+    @keyframes breathe { 0%, 100% { opacity: .45; } 50% { opacity: .9; } }
+
+    .controls {
+      position: fixed; left: 50%; bottom: 36px; transform: translateX(-50%);
+      display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px;
+      width: min(96vw, 900px);
+    }
+    .gap { width: 14px; }
+    .sep { font-size: 11px; letter-spacing: .1em; color: var(--muted); opacity: .7; padding: 0 4px; }
+    .btn {
+      font: 300 12px/1 'IBM Plex Mono', ui-monospace, monospace;
+      letter-spacing: .08em; color: var(--cream);
+      background: rgba(7, 8, 10, .82);
+      border: 1px solid rgba(242, 239, 230, .3);
+      border-radius: 999px; padding: 8px 12px; cursor: pointer;
+      transition: border-color .3s ease;
+    }
+    .btn:hover, .btn:focus-visible { border-color: rgba(242, 239, 230, .8); outline: none; }
+    .btn.is-on { border-color: rgba(242, 239, 230, .9); }
+
+    .grain { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: overlay; opacity: .22; z-index: 3; }
+
+    @media (max-width: 1100px), (max-height: 780px) { .legend { display: none; } }
+    @media (max-width: 720px) { .hud { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="spot spot--orange"></div>
+  <div class="spot spot--pink"></div>
+  <canvas id="c"></canvas>
+
+  <header class="head">
+    <p class="kicker">03 — sketch</p>
+    <h1 class="title">star &amp;<br>cloud of states</h1>
+    <p class="sub" data-star-line></p>
+    <div class="blend">
+      <small>your blend</small>
+      <b data-blend-name>—</b>
+      <em data-blend-extra></em>
+      <span data-blend-line></span>
+    </div>
+  </header>
+
+  <dl class="hud">
+    <dt>star</dt><dd data-hud="star">—</dd>
+    <dt>blend</dt><dd data-hud="blend">—</dd>
+    <dt>tempo</dt><dd data-hud="tempo">—</dd>
+    <dt>density</dt><dd data-hud="density">—</dd>
+    <dt>shape</dt><dd data-hud="shape">—</dd>
+  </dl>
+
+  <p class="legend">
+    <b>star</b> — a lesson: what we learn to hear<br>
+    <b>cloud</b> — the states people arrive with<br>
+    <b>mix</b> — pour several states into one feeling<br>
+    <b>paint</b> — draw a shape; it becomes the rhythm
+  </p>
+
+  <div class="tag" data-star-tag>
+    <p class="name"><small>star</small><span data-star-name>rhythm</span></p>
+  </div>
+
+  <div data-states></div>
+
+  <p class="hint" data-hint></p>
+
+  <div class="controls">
+    <span class="sep">star</span>
+    <button type="button" class="btn is-on" data-star="rhythm">rhythm</button>
+    <button type="button" class="btn" data-star="timbre">timbre</button>
+    <button type="button" class="btn" data-star="silence">silence</button>
+    <span class="gap"></span>
+    <button type="button" class="btn is-on" data-mode="mix">mix</button>
+    <button type="button" class="btn" data-mode="paint">paint</button>
+    <button type="button" class="btn" data-clear>clear</button>
+    <span class="gap"></span>
+    <button type="button" class="btn" data-sound aria-pressed="true">sound: on</button>
+  </div>
+
+  <svg class="grain" aria-hidden="true">
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>
+    <rect width="100%" height="100%" filter="url(#grain)"/>
+  </svg>
+
+  <script src="star.js"></script>
+</body>
+</html>
