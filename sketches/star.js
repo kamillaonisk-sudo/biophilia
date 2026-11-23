@@ -414,7 +414,7 @@
   }
 
   // сообщаем карте: какая смесь, какой ритм нарисован и прослушан ли урок
-  let heard = 0, passed = false;
+  let heard = 0, passed = false, askTap = false;
   function reportToMap() {
     if (!EMBED || window.parent === window || (mix.W === 0 && !passed)) return;
     window.parent.postMessage({
@@ -681,6 +681,12 @@
     ctx.beginPath(); ctx.arc(cx, cy, 4 + flash * 1.5, 0, Math.PI * 2); ctx.fill();
 
     // станция орбиты: кольцо прослушивания — урок пройден, когда оно замкнулось
+    // браузер мог не дать звуку стартовать без касания внутри — просим коснуться
+    if (EMBED && ac) {
+      const mute = ac.state !== 'running';
+      if (mute && !askTap) { askTap = true; hint.textContent = 'tap anywhere to hear'; hint.classList.remove('is-hidden'); }
+      else if (!mute && askTap) { askTap = false; updateHint(); }
+    }
     if (EMBED && !FEEL) {
       if (!passed && ac && ac.state === 'running' && soundOn) {
         heard += dt;
