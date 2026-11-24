@@ -10,6 +10,8 @@
  */
 (() => {
   'use strict';
+  // iPhone: звук сайта — это музыка, он должен звучать и при выключенном звонке (iOS 17+)
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* нет — и ладно */ }
 
   // ---------- константы ----------
   const PALETTE = ['#ff5a5f', '#ffb238', '#ffe14d', '#5ee0c8', '#ff7ac6',
@@ -22,7 +24,7 @@
   const FLASH = 2.6;                     // длительность вспышки
   const THREADS_AT = 4.2;                // когда начинают проявляться созвездия
   const DONE_AT = 8;                     // через сколько секунд после взрыва — intro:done
-  const VOLUME = 0.4;                    // общая громкость вступления (было 0.9 — слишком громко)
+  const VOLUME = 0.17;                   // общая громкость вступления — вровень с остальным сайтом
   // подписи у крупных звёзд: где-то сейчас кто-то чувствует вот это
   const CITIES = ['reykjavík', 'lisbon', 'tokyo', 'lagos', 'são paulo', 'mumbai', 'tbilisi', 'mexico city',
                   'seoul', 'cairo', 'oslo', 'nairobi', 'buenos aires', 'jakarta', 'almaty', 'berlin', 'montréal', 'hanoi'];
@@ -376,9 +378,19 @@
     const cities = CITIES.slice().sort(() => Math.random() - 0.5);
     // подписи — только у звёзд подальше от даты в центре и от кнопки внизу
     const free = (p) => Math.hypot((p.tx - cx) / 1.6, p.ty - cy) > Math.min(W, H) * 0.2 &&
-      !(p.ty > H - 150 && Math.abs(p.tx - cx) < 260) && p.tx < W - 220 && p.ty > 60;
-    labels = stars.filter(free).sort(() => Math.random() - 0.5).slice(0, 6);
-    labels.forEach((p, i) => (p.label = `${cities[i]} · ${pick(FEELINGS)}`));
+      !(p.ty > H - 150 && Math.abs(p.tx - cx) < 260) && p.tx > 8 && p.ty > 60;
+    // подпись целиком на экране и не налезает на соседние
+    labels = [];
+    const want = W < 600 ? 4 : 6;
+    for (const p of stars.filter(free).sort(() => Math.random() - 0.5)) {
+      if (labels.length >= want) break;
+      const text = `${cities[labels.length]} · ${pick(FEELINGS)}`;
+      const w = text.length * 7 + 14;
+      if (p.tx + w > W - 10) continue;
+      if (labels.some((q) => Math.abs(q.ty - p.ty) < 30 && Math.abs(q.tx - p.tx) < Math.max(q.label.length, text.length) * 7 + 20)) continue;
+      p.label = text;
+      labels.push(p);
+    }
   }
 
   // ---------- рисование ----------
@@ -692,6 +704,8 @@
     btnSound.setAttribute('aria-pressed', String(on));
   });
   btnSkip.addEventListener('click', (e) => { e.stopPropagation(); skip(); });
+
+  if (window.matchMedia('(pointer: coarse)').matches) root.querySelector('.intro__after').textContent = 'touch a point — each one sounds';
 
   // сегодняшняя дата в центре — день мира, в который вы пришли
   const d = new Date();

@@ -18,6 +18,8 @@
  */
 (() => {
   'use strict';
+  // iPhone: звук сайта — это музыка, он должен звучать и при выключенном звонке (iOS 17+)
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* нет — и ладно */ }
 
   const BASE = 55;
   const CREAM = '#f2efe6';
@@ -585,7 +587,7 @@
   // ======================================================================
   // РИСОВАНИЕ
   // ======================================================================
-  let W = 0, H = 0, DPR = 1, M = 1, cx = 0, cy = 0;
+  let W = 0, H = 0, DPR = 1, M = 1, cx = 0, cy = 0, RX = 0, RY = 0, GR = 0;
   let flash = 0;
   const stepFlash = new Array(STEPS).fill(0);
   const ripples = [], sparks = [];
@@ -598,6 +600,16 @@
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     M = Math.min(W, H);
     cx = W / 2; cy = H * 0.5;
+    // облака лежат на эллипсе RX × RY, кольцо такта — GR
+    RX = M * 0.33; RY = RX * 0.82; GR = M * 0.41;
+    if (H > W * 1.15) {
+      // телефон: сверху шапка, снизу кнопки — облака раскладываются в высоту между ними
+      const top = 170, bottom = 150, avail = H - top - bottom;
+      cy = top + avail / 2;
+      RY = Math.max(110, Math.min(avail / 2 - 14, W * 0.5));
+      RX = Math.min(W / 2 - 52, RY);
+      GR = Math.min(W / 2 - 10, RY + 22);
+    }
   }
 
   // движение частицы: у каждого состояния своё, и оно сохраняется внутри смеси
@@ -625,7 +637,7 @@
     lastT = t;
     ctx.clearRect(0, 0, W, H);
 
-    const R = M * 0.33;
+    const R = RX;
     const cloudRot = Math.PI / 6 + 0.06 * Math.sin(t * 0.15);
     const k = 1 - Math.pow(0.02, dt);
 
@@ -645,9 +657,9 @@
     ctx.save();
     ctx.setLineDash([2, 9]);
     ctx.strokeStyle = CREAM; ctx.lineWidth = 1; ctx.globalAlpha = 0.16;
-    ctx.beginPath(); ctx.ellipse(cx, cy, R, R * 0.82, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, cy, R, RY, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.globalAlpha = 0.1;
-    ctx.beginPath(); ctx.ellipse(cx, cy, R * 1.45, R * 1.2, 0.2, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, cy, R * 1.45, RY * 1.45, 0.2, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
 
     // сетка такта: 16 точек по кругу и стрелка, когда есть рисунок или режим кисти
@@ -656,7 +668,7 @@
     if ((pattern.active || loopStation()) && ac) phase = (((ac.currentTime - pattern.loopStart) / pattern.loop) % 1 + 1) % 1;
     for (let s2 = 0; s2 < STEPS; s2++) stepFlash[s2] *= Math.pow(0.08, dt);
     if (showGrid) {
-      const gr = M * 0.41;
+      const gr = GR;
       const cur = phase >= 0 ? Math.floor(phase * STEPS) : -1;
       const steps = pattern.active ? pattern.steps : autoSteps;
       if (loopStation()) {                                       // циферблат такта
@@ -708,7 +720,7 @@
       c.near = lerp(c.near || 0, Math.min(MAX_W, drops[c.k]) / MAX_W, k);
       const rr = R * (1 - 0.42 * c.near);
       c.x = cx + Math.cos(c.ang) * rr;
-      c.y = cy + Math.sin(c.ang) * rr * 0.82;
+      c.y = cy + Math.sin(c.ang) * rr * (RY / RX);
     });
 
     // нити
@@ -937,7 +949,7 @@
   canvas.addEventListener('pointercancel', endStroke);
   canvas.addEventListener('click', (e) => {
     if (star === 'silence' && EMBED) {
-      const gr = M * 0.41;
+      const gr = GR;
       for (let s2 = 0; s2 < STEPS; s2++) {
         const a = -Math.PI / 2 + ((s2 + 0.5) / STEPS) * Math.PI * 2;
         if (Math.hypot(cx + Math.cos(a) * gr - e.clientX, cy + Math.sin(a) * gr - e.clientY) < 16) {
@@ -1010,7 +1022,8 @@
   if (EMBED) {
     // внутри карты звезда звучит сразу: в неё влетели кликом
     ensureAudio();
-    window.addEventListener('pointerdown', ensureAudio);
+    // на телефоне звук разрешается, когда палец отпускают — слушаем и это
+    ['pointerdown', 'pointerup', 'touchend', 'click'].forEach((ev) => window.addEventListener(ev, ensureAudio));
     // карта присылает рисунок человека — он звучит и здесь, через линзу этой станции
     const takeInit = (list) => {
       if (ready) return;
