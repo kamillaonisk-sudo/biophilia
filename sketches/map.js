@@ -152,9 +152,11 @@
   // ---------- геометрия мира (в долях меньшей стороны экрана) ----------
   let W = 0, H = 0, DPR = 1, M = 1;
   const SHARED = { x: 0, y: 0.02, r: 0.15 };
-  const orbitRX = () => Math.min(0.5, (W / M) * 0.29);
-  const ORBIT_RY = 0.25;
-  const orbitPos = (a) => ({ x: SHARED.x + Math.cos(a) * orbitRX(), y: SHARED.y + Math.sin(a) * ORBIT_RY });
+  // на телефоне (экран вытянут вверх) орбита тоже вытягивается вверх
+  const portrait = () => H > W * 1.15;
+  const orbitRX = () => (portrait() ? Math.min(0.36, (W / M) * 0.36) : Math.min(0.5, (W / M) * 0.29));
+  const orbitRY = () => (portrait() ? Math.min(0.6, (H / M) * 0.26) : 0.25);
+  const orbitPos = (a) => ({ x: SHARED.x + Math.cos(a) * orbitRX(), y: SHARED.y + Math.sin(a) * orbitRY() });
   const stationPos = (i) => orbitPos(LESSONS[i].a);
 
   // планета стоит у последней пройденной станции и перелетает по орбите
@@ -205,13 +207,16 @@
   const SKY = { x: 1.6, y: 1.1 };
   const songSpots = (() => {
     const rnd = mulberry32(2011), spots = [];
+    const vw = innerWidth, vh = innerHeight, m = Math.min(vw, vh), tall = vh > vw * 1.15;
+    const vx = vw / m / 2 - 0.06, vy = vh / m / 2 - 0.1;                          // видимая половина экрана
+    const ox = tall ? 0.5 : 0.74, oy = tall ? Math.min(0.75, (vh / m) * 0.3 + 0.15) : 0.44;   // орбита с запасом
     for (let tries = 0; spots.length < SONGS.length && tries < 20000; tries++) {
       const p = { x: (rnd() * 2 - 1) * SKY.x, y: (rnd() * 2 - 1) * SKY.y };
-      if ((p.x / 0.74) ** 2 + ((p.y - 0.02) / 0.44) ** 2 < 1) continue;          // не на орбите
+      if ((p.x / ox) ** 2 + ((p.y - 0.02) / oy) ** 2 < 1) continue;              // не на орбите
       // первые четыре выглядывают по краям первого экрана, остальные ждут, пока небо потаскают
-      const inView = Math.abs(p.x) < 0.74 && Math.abs(p.y) < 0.44;
+      const inView = Math.abs(p.x) < vx && Math.abs(p.y) < vy;
       if ((spots.length < 4) !== inView) continue;
-      if (spots.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 0.42)) continue;   // не слипаются
+      if (spots.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < (tall ? 0.34 : 0.42))) continue;   // не слипаются
       spots.push(p);
     }
     return spots;
@@ -663,6 +668,9 @@
     ctx.textAlign = 'center';
     ctx.fillStyle = color;
     ctx.globalAlpha = alpha;
+    const half = ctx.measureText(text).width / 2 + 8;
+    if (x < -half * 0.5 || x > W + half * 0.5) { ctx.globalAlpha = 1; return; }   // объект за экраном — без подписи
+    if (W > half * 2) x = Math.max(half, Math.min(W - half, x));
     ctx.fillText(text, x, y);
     ctx.globalAlpha = 1;
   }
@@ -677,7 +685,7 @@
 
   function orbitArc(ox, oy, a0, a1, color, alpha, width) {
     ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = width;
-    ctx.beginPath(); ctx.ellipse(ox, oy, orbitRX() * M * cam.z, ORBIT_RY * M * cam.z, 0, a0, a1); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(ox, oy, orbitRX() * M * cam.z, orbitRY() * M * cam.z, 0, a0, a1); ctx.stroke();
   }
 
   let lastT = now();
@@ -767,7 +775,7 @@
       orbitArc(ox, oy, a0, a0 + (a1 - a0) * f, col, 0.85, 1.8);
     });
     ctx.globalAlpha = 1;
-    label('learning orbit', ox + orbitRX() * M * cam.z * 0.7, oy + ORBIT_RY * M * cam.z * 0.86, 10, 0.4);
+    if (!portrait()) label('learning orbit', ox + orbitRX() * M * cam.z * 0.7, oy + orbitRY() * M * cam.z * 0.86, 10, 0.4);
 
     // ---- общая планета из осколков ----
     const R = SHARED.r * M * cam.z;
@@ -990,13 +998,26 @@
   // небо можно таскать мышью и приближать колёсиком — песни находятся, когда исследуешь
   let drag = null, dragged = false;
   const CAM_LIM = { x: SKY.x - 0.4, y: SKY.y - 0.3 };
+  const touches = new Map();
+  let pinch = null;
   canvas.addEventListener('pointerdown', (e) => {
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (inside || follow) return;
+    if (touches.size === 2) {                                   // два пальца — приближение
+      const [a, b] = [...touches.values()];
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z: camT.z };
+      drag = null; dragged = true;
+      return;
+    }
     drag = { x: e.clientX, y: e.clientY, cx: camT.x, cy: camT.y, moved: false };
   });
-  window.addEventListener('pointerup', () => {
+  const lift = (e) => {
+    touches.delete(e.pointerId);
+    if (touches.size < 2) pinch = null;
     if (drag) { dragged = drag.moved; drag = null; document.body.classList.remove('is-dragging'); }
-  });
+  };
+  window.addEventListener('pointerup', lift);
+  window.addEventListener('pointercancel', lift);
   canvas.addEventListener('wheel', (e) => {
     if (inside || follow) return;
     e.preventDefault();
@@ -1006,6 +1027,13 @@
 
   canvas.addEventListener('pointermove', (e) => {
     if (inside) return;
+    if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && touches.size === 2) {
+      const [a, b] = [...touches.values()];
+      camT.z = Math.max(0.6, Math.min(1.8, pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d));
+      document.body.classList.add('was-dragged');
+      return;
+    }
     if (drag) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (!drag.moved && Math.hypot(dx, dy) > 5) { drag.moved = true; document.body.classList.add('is-dragging', 'was-dragged'); }
@@ -1078,6 +1106,8 @@
       : !state.sent ? 'your planet is complete: inside — your feelings, outside — your place'
       : 'click the shared planet to hear everyone together';
   }
+
+  if (matchMedia('(pointer: coarse)').matches) $('[data-tip]').textContent = 'drag the sky to explore · pinch to zoom';
 
   window.addEventListener('resize', resize);
   resize();

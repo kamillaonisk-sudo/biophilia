@@ -376,9 +376,19 @@
     const cities = CITIES.slice().sort(() => Math.random() - 0.5);
     // подписи — только у звёзд подальше от даты в центре и от кнопки внизу
     const free = (p) => Math.hypot((p.tx - cx) / 1.6, p.ty - cy) > Math.min(W, H) * 0.2 &&
-      !(p.ty > H - 150 && Math.abs(p.tx - cx) < 260) && p.tx < W - 220 && p.ty > 60;
-    labels = stars.filter(free).sort(() => Math.random() - 0.5).slice(0, 6);
-    labels.forEach((p, i) => (p.label = `${cities[i]} · ${pick(FEELINGS)}`));
+      !(p.ty > H - 150 && Math.abs(p.tx - cx) < 260) && p.tx > 8 && p.ty > 60;
+    // подпись целиком на экране и не налезает на соседние
+    labels = [];
+    const want = W < 600 ? 4 : 6;
+    for (const p of stars.filter(free).sort(() => Math.random() - 0.5)) {
+      if (labels.length >= want) break;
+      const text = `${cities[labels.length]} · ${pick(FEELINGS)}`;
+      const w = text.length * 7 + 14;
+      if (p.tx + w > W - 10) continue;
+      if (labels.some((q) => Math.abs(q.ty - p.ty) < 30 && Math.abs(q.tx - p.tx) < Math.max(q.label.length, text.length) * 7 + 20)) continue;
+      p.label = text;
+      labels.push(p);
+    }
   }
 
   // ---------- рисование ----------
@@ -692,6 +702,8 @@
     btnSound.setAttribute('aria-pressed', String(on));
   });
   btnSkip.addEventListener('click', (e) => { e.stopPropagation(); skip(); });
+
+  if (window.matchMedia('(pointer: coarse)').matches) root.querySelector('.intro__after').textContent = 'touch a point — each one sounds';
 
   // сегодняшняя дата в центре — день мира, в который вы пришли
   const d = new Date();
