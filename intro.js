@@ -10,6 +10,8 @@
  */
 (() => {
   'use strict';
+  // iPhone: звук сайта — это музыка, он должен звучать и при выключенном звонке (iOS 17+)
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* нет — и ладно */ }
 
   // ---------- константы ----------
   const PALETTE = ['#ff5a5f', '#ffb238', '#ffe14d', '#5ee0c8', '#ff7ac6',
@@ -22,7 +24,7 @@
   const FLASH = 2.6;                     // длительность вспышки
   const THREADS_AT = 4.2;                // когда начинают проявляться созвездия
   const DONE_AT = 8;                     // через сколько секунд после взрыва — intro:done
-  const VOLUME = 0.4;                    // общая громкость вступления (было 0.9 — слишком громко)
+  const VOLUME = 0.17;                   // общая громкость вступления — вровень с остальным сайтом
   // подписи у крупных звёзд: где-то сейчас кто-то чувствует вот это
   const CITIES = ['reykjavík', 'lisbon', 'tokyo', 'lagos', 'são paulo', 'mumbai', 'tbilisi', 'mexico city',
                   'seoul', 'cairo', 'oslo', 'nairobi', 'buenos aires', 'jakarta', 'almaty', 'berlin', 'montréal', 'hanoi'];

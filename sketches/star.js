@@ -18,6 +18,8 @@
  */
 (() => {
   'use strict';
+  // iPhone: звук сайта — это музыка, он должен звучать и при выключенном звонке (iOS 17+)
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* нет — и ладно */ }
 
   const BASE = 55;
   const CREAM = '#f2efe6';
@@ -1020,7 +1022,8 @@
   if (EMBED) {
     // внутри карты звезда звучит сразу: в неё влетели кликом
     ensureAudio();
-    window.addEventListener('pointerdown', ensureAudio);
+    // на телефоне звук разрешается, когда палец отпускают — слушаем и это
+    ['pointerdown', 'pointerup', 'touchend', 'click'].forEach((ev) => window.addEventListener(ev, ensureAudio));
     // карта присылает рисунок человека — он звучит и здесь, через линзу этой станции
     const takeInit = (list) => {
       if (ready) return;

@@ -17,6 +17,8 @@
  */
 (() => {
   'use strict';
+  // iPhone: звук сайта — это музыка, он должен звучать и при выключенном звонке (iOS 17+)
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* нет — и ладно */ }
 
   const CREAM = '#f2efe6';
   const BASE = 55;
@@ -529,8 +531,8 @@
     grainCool[i] = t;
     const src = ac.createBufferSource(); src.buffer = worldBuf;
     const g = ac.createGain();
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.4, t + 0.03);
-    g.gain.setValueAtTime(0.4, t + 0.28); g.gain.linearRampToValueAtTime(0, t + 0.4);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.2, t + 0.03);
+    g.gain.setValueAtTime(0.2, t + 0.28); g.gain.linearRampToValueAtTime(0, t + 0.4);
     src.connect(g); g.connect(out);
     src.start(t, Math.min((i / WAVE_N) * REC_DUR, worldBuf.duration - 0.45), 0.42);
   }
